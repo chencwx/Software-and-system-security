@@ -18,16 +18,14 @@
 
 + 使用pip安装并启动django（使用清华的源下载提高速度）[官方教程](https://docs.djangoproject.com/en/3.0/intro/tutorial01/)
 
-  ```bash
-pip install -i https://pypi.tuna.tsinghua.edu.cn/simple django
-  django-admin startproject mysite
-  cd  mysite
-  python manage.py startapp polls
-  python manage.py runserver
-  ```
-  
-  ![](./image/run.png)
-  
+  > pip install -i https://pypi.tuna.tsinghua.edu.cn/simple django
+  >   django-admin startproject mysite
+  >   cd  mysite
+  >   python manage.py startapp polls
+  >   python manage.py runserver
+
+ ![](./image/run.png)
+
 + 访问 http://127.0.0.1:8000/，可以看到命令行中有请求的消息
   
   ![](./image/127.png)
