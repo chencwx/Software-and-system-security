@@ -337,16 +337,17 @@
 
   + 不过，对于一个改节表和入口点的感染型病毒而言，在被感染的文件中，那段在程序初始化后，就被抢先执行的病毒代码，由于其执行的特殊时机（在程序刚初始化 跳到入口点时），它可以轻松地从堆栈中找到一个位于kernel32.dll空间内的地址，然后用它来找kernel32.dll的基址。
 
-  + **经过以上分析，该代码的行为是：
-    \1. 利用一个call来使得系统将EIP入栈，并马上pop出来，从而解决了自身代码定位问题，而且由于shellcode编排得巧妙，得到的地址正是指向“数据区”的开头。
-    2.利用fs:[0x30]这个地址，得到PEB头部的地址。然后读取PEB中的PLDR_DATA指针，再找LDR_DATA结构中的 InInitializationOrderModuleList的Flink，从而得到指向kernel32.dll的LDR_MODULE结构的地 址。通过读取LDR_MODULE结构中的BaseAddress，从而得到了kernel32.dll在进程空间中的基址。由于PEB属于 Undocument的内容，以上名字可能不同的人命名有所不同，但是意义是一样的。
-    3.通过读取kernel32.dll在进程空间中的映像的PE文件结构，找到其输出表，通过循环比对，在AddressOfNames数组中找到指向GetProcAddress这个函数名的指针位置，定位其索引号位置。
-    4.通过索引查AddressOfFunctions数组，找到GetProcAddress的函数入口偏移量，加上kernel32.dll的基址，终于得到了GetProcAddress函数的确切入口。
-    5.通过调用GetProcAddress函数，配合kernel32.dll的基址这个句柄，找到GetSystemDirectoryA、 Winexec、ExitThread、LoadLibraryA这四个由kernel32.dll导出的函数的入口点，并将之依次保存到“数据区”开头 以备调用。
-    6.通过刚刚得到的LoadLibraryA函数入口，加载urlmon.dll，用GetProcAddress得到重要的函数URLDownloadToFileA的入口点，同样保存备用。
-    7.通过调用GetSystemDirectoryA，得到系统文件夹路径（即XP里默认为C:/WINDOWS/system32，注意得到的路径最后没有"/"），在路径后面加入/a.exe，作为下载保存的本地地址。
-    8.调用URLDownloadToFileA，将由挂马者指定的URL地址对应的病毒文件（这里是http://99.vc/s.exe），下载到本机（默认是C:/WINDOWS/system32/a.exe），并调用Winexec运行。
-    9.完成以上所有任务，调用ExitThread，退出自身线程。**
+  + 经过以上分析，该代码的整体逻辑是： 
+  
+    1. 利用一个call来使得系统将EIP入栈，并马上pop出来，从而解决了自身代码定位问题，而且由于shellcode编排得巧妙，得到的地址正是指向“数据区”的开头。 
+    2. 利用fs:[0x30]这个地址，得到PEB头部的地址。然后读取PEB中的PLDR_DATA指针，再找LDR_DATA结构中的 InInitializationOrderModuleList的Flink，从而得到指向kernel32.dll的LDR_MODULE结构的地 址。通过读取LDR_MODULE结构中的BaseAddress，从而得到了kernel32.dll在进程空间中的基址。由于PEB属于 Undocument的内容，以上名字可能不同的人命名有所不同，但是意义是一样的。 
+    3. 通过读取kernel32.dll在进程空间中的映像的PE文件结构，找到其输出表，通过循环比对，在AddressOfNames数组中找到指向GetProcAddress这个函数名的指针位置，定位其索引号位置。 
+    4. 通过索引查AddressOfFunctions数组，找到GetProcAddress的函数入口偏移量，加上kernel32.dll的基址，终于得到了GetProcAddress函数的确切入口。 
+    5. 通过调用GetProcAddress函数，配合kernel32.dll的基址这个句柄，找到GetSystemDirectoryA、 Winexec、ExitThread、LoadLibraryA这四个由kernel32.dll导出的函数的入口点，并将之依次保存到“数据区”开头 以备调用。 
+    6. 通过刚刚得到的LoadLibraryA函数入口，加载urlmon.dll，用GetProcAddress得到重要的函数URLDownloadToFileA的入口点，同样保存备用。 
+    7. 通过调用GetSystemDirectoryA，得到系统文件夹路径（即XP里默认为C:/WINDOWS/system32，注意得到的路径最后没有"/"），在路径后面加入/a.exe，作为下载保存的本地地址。 
+    8. 调用URLDownloadToFileA，将由挂马者指定的URL地址对应的病毒文件，下载到本机，并调用Winexec运行。 
+    9. 完成以上所有任务，调用ExitThread，退出自身线程。
 
 ## 实验参考资料
 
