@@ -1,6 +1,6 @@
 # 符号执行
 
-## 原理
+## 实验原理
 
 + 符号执行是一种程序分析技术，和模糊测试的思路不一样，模糊测试是吧测试对象当做一个黑盒子，不深入理解内部原理。符号执行是白盒测试技术，是基于程序分析的。或者说是一种程序分析技术，需要解析程序的源码（或者至少是反汇编后的汇编代码）。
 
@@ -97,8 +97,6 @@
 
 + [自动走迷宫](https://github.com/grese/klee-maze)
 
-+ 大家先把这个迷宫小游戏的代码整理编译运行一下，然后在教程的基础上使用KLEE来完成这个迷宫游戏的自动探路。体验一下符号执行是如何去根据程序分析来自动生成满足特定约束条件、覆盖指定程序执行路径的输入数据的。
-
 + 符号执行的主要问题。
 
   + 当程序中有循环的时候，按照符号执行树，每一个分支条件都是需要展开。这会造成程序的路径非常多。循环是程序的一个基本结构，普遍存在的。这种情况要遍历每一个路径，实际路径数量会非常巨大。造成消耗的时间不可行。这个问题称为路径爆炸，路径的数据量是分支数量的指数级。循环更加强了这个问题。还有当程序路径非常多，输入变量非常多的时候，会超过SMT求解的求解能力。所以对大型程序，目前符号执行只是一种辅助性的手段。但是这种技术是有前景的，随着计算能力的增强，算法的优化和改进，未来可能成为程序分析、程序自动化测试和程序安全性分析的主要的形式化的方法。
@@ -107,7 +105,243 @@
 
 
 
-## 作业
+## 课后实验
 
 + 作业：安装KLEE，完成官方tutorials。至少完成前三个，有时间的同学可以完成全部一共7个
 
+  + 实验环境：virtualbox+ubuntu16.04 server
+
+  + 安装依赖包
+
+    ```bash
+     $ sudo apt-get install build-essential curl libcap-dev git cmake libncurses5-dev python-minimal python-pip unzip
+    ```
+
+  + 安装LLVM 需要注意：对于不同版本的ubuntu应该到 [LLVM Package Repository](http://llvm.org/apt/) 找到对应版本的。写入source.list 中。
+
+    ```bash
+    
+    deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-3.9 main
+     
+    deb-src http://apt.llvm.org/xenial/ llvm-toolchain-xenial-3.9 main
+    ```
+
+    ![](./image/e1.png)
+
+  + 添加repository key并下载llvm 3.9的packages
+
+    ```bash
+    
+    $ wget -O - http://llvm.org/apt/llvm-snapshot.gpg.key|sudo apt-key add -  
+     
+    $ sudo apt-get update  
+     
+    $ sudo apt-get install clang-3.9 lldb-3.9
+    ```
+
+    ![](./image/e2.png)
+
+    ![](./image/e3.png)
+
+  + 需要在~/.bashrc里面改一下PATH：（注意不要在命令行中配置，否则每次开机都得配置一遍）
+
+    ```bash
+    export PATH="/usr/lib/llvm-3.9/bin:$PATH"
+    ```
+
+  + 安装约束解释器：选择的是STP，根据官网中的文档直接配置即可。可选项暂时未配置
+
+  + 安装klee
+
+    ```bash
+    
+    $ git clone https://github.com/jirislaby/klee.git
+     
+    $ cd klee
+     
+    $ git branch -a
+     
+    git checkout remotes/origin/better-paths
+    ```
+
+  + 配置KLEE
+
+    ```bash
+    
+    $ mkdir klee_build_dir
+     
+    $ cd klee_build_dir
+     
+    $ cmake -DENABLE_SOlVER_STP=ON -DENABLE_SYSTEM_TESTS=OFF -DENABLE_UNIT_TESTS=ON ../klee
+    ```
+
+    ![](./image/e4.png)
+
+  + 由于未配置可选项所以要将这些关闭。在cmake的过程中，会提示关闭。提示找不到Doxygen，则需要安装
+
+    ```bash
+     sudo apt-get install doxygen
+    ```
+
+  + 编译安装klee
+
+    ```bash
+    $ sudo make install
+    ```
+
+  + 若出现找不到liblibLLVM-3.9.so.so的情况，参考：http://terenceli.github.io/%E6%8A%80%E6%9C%AF/2017/06/08/klee-newbie
+
+    ```
+    make[2]: *** No rule to make target '/usr/lib/llvm-3.9/lib/liblibLLVM-3.9.so.so', needed by 'bin/gen-random-bout'.
+    ```
+
+  + 则利用软链接。
+
+    ```bash
+    $ ln -L libLLVM-3.9.so liblibLLVM-3.9.so.so
+    ```
+
+  + 官方 tutorial:（新建了一个klee用户便于实验，且环境是新搭建的）
+  
+  + 这个实例完整程序如下，在 `examples/get_sign 目录下，`用来判断一个整数的正，负，或者为0.
+  
+    ```c
+    
+    #include <klee/klee.h>
+     
+    int get_sign(int x) {
+      if (x == 0)
+         return 0;
+      
+      if (x < 0)
+         return -1;
+      else 
+         return 1;
+    } 
+     
+    int main() {
+      int a;
+      klee_make_symbolic(&a, sizeof(a), "a");
+      return get_sign(a);
+    }
+    
+    ```
+  
+  + 其中，klee_make_sybolic是KLEE自带的函数，用来产生符号化的输入。因为KLEE是在LLVM字节码上进行工作，所以我们首先需要将.c编译为LLVM字节码。首先，我们进入到该文件目录（~/klee_src/examples/get_sign）下执行命令
+  
+    ```bash
+    clang -I ../../include -emit-llvm -c -g -O0 -Xclang -disable-O0-optnone get_sign.c
+    ```
+  
+  + 其中，参数-I是为了编译器找到头文件klee/klee.h,-g是为了在字节码文件中添加debug信息，还有后面的，具体不深究，按照官网推荐来。同目录下我们会生成一个get-sign.bc的字节码文件，然后进行测试：
+  
+    ```bash
+    $ klee get_sign.bc
+    ```
+
+    ![](./image/k1.png)
+    
+  + 可以看到结果中KLEE给出了总指令数，完整路径和生成的测试案例数。
+  
+  + 最后，我们看当前目录下多生成了两个文件：**klee-last** 和 **klee-out-0。**其中klee-out-0是本次测试结果，klee-last是最新测试结果，每次测试后覆盖。
+  
+    ![](./image/k2.png)
+  
+  + 符号化输入,为了利用KLEE测试这个函数，首先需要设置符号化输入，也就是把输入变量符号化。这里用到 klee_make_symbolic() 函数，该函数输入三个参数，分别是变量地址、变量大小、变量名（这个名可以自己随便取，就是用作标识）。之后设置一个main函数，调用klee-make-symbolic函数，再利用符号化的输入变量调用所要测试的函数get_sign。具体main函数的定义如下：
+  
+    ```c
+    int main() {
+      int a;
+      klee_make_symbolic(&a, sizeof(a), "a");
+      return get_sign(a);
+    }
+    ```
+  
+  + 编译程序生成LLVM bitcode,KLEE的分析是基于LLVM bitcode的，所以首先需要用llvm-gcc编译c文件生成文件，命令如下：
+  
+    ```bash
+    $ llvm-gcc --emit-llvm -c -g get_sign.c
+    ```
+  
+  + 生成get_sign.o文件，-g参数用于在编译中加入debug信息，以便于产生源代码级别的程序信息。同时编译中不要使用优化设置的参数。
+  
+  + 运行KLEE分析程序
+  
+    ```bash
+     $ klee get_sign.o
+    ```
+  
+  + 可以得到如下的输出：
+  
+    ```bash
+    KLEE: output directory = "klee-out-0"
+    
+        KLEE: done: total instructions = 51
+        KLEE: done: completed paths = 3
+        KLEE: done: generated tests = 3
+    ```
+  
+  +  从中可以看出，该测试函数有3条路径，并且为每一条路径都生成了一个测试例。KLEE执行输出信息都在文件klee-out-N中，不过最近一次的执行生成的目录由klee-last快捷方式指向。查看生成的文件：
+  
+    ```bash
+    $ ls klee-last/
+        assembly.ll      run.istats       test000002.ktest
+        info             run.stats        test000003.ktest
+        messages.txt     test000001.ktest warnings.txt
+    ```
+  
+  + KLEE生成的测试例查看,扩展名为.ktest的都是生成的测试例，这个程序有三条path，所以三个测试例，这些文件都是二进制代码，可以用ktest-tool命令查看，具体如下：
+  
+    ```bash
+    $ ktest-tool --write-ints klee-last/test000001.ktest
+        ktest file : 'klee-last/test000001.ktest'
+        args       : ['get_sign.o']
+        num objects: 1
+        object    0: name: 'a'
+        object    0: size: 4
+        object    0: data: 1
+    
+        $ ktest-tool --write-ints klee-last/test000002.ktest 
+        ...
+        object    0: data: -2147483648
+    
+        $ ktest-tool --write-ints klee-last/test000003.ktest
+        ...
+        object    0: data: 0
+    ```
+  
+  +  很明显的可以看到，每一个路径对应的输入变量值，分别是1,  -2147483648, 0。
+  
+  + 利用测试例运行程序, 用生成的测试例作为输入运行程序，命令及结果如下：
+  
+    ```bash
+     $ export LD_LIBRARY_PATH=path-to-klee-root/Release+Asserts/lib/:$LD_LIBRARY_PATH
+    
+            #LD_LIBRARY_PATH中的path-to-klee-root需要用具体的路径代替，后面的也一样
+        $ gcc -L path-to-klee-root/Release+Asserts/lib/ get_sign.c -lkleeRuntest
+    
+            #gcc编译生成a.out，一个可执行程序，然后用下面的方式指定其输入为test000001.ktest。
+    
+        $ KTEST_FILE=klee-last/test000001.ktest ./a.out
+        $ echo $?
+    
+            #查看返回值
+        1
+        $ KTEST_FILE=klee-last/test000002.ktest ./a.out
+        $ echo $?
+    
+            #255实际上对应的是-1
+        255
+        $ KTEST_FILE=klee-last/test000003.ktest ./a.out
+        $ echo $?
+        0
+    ```
+  
+    
+
+## 实验参考资料
+
++ [klee安装](https://blog.csdn.net/goto2091/article/details/86602063)
++ [编译klee](https://blog.csdn.net/melissa_cjt/article/details/74995527)
++ [apt-get出错](https://blog.csdn.net/zyxlinux888/article/details/6358615)
++ [klee教程](https://blog.csdn.net/qq_26736193/article/details/103455451)
