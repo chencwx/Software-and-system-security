@@ -53,11 +53,16 @@
 
 ## 课后实验
 
+### 实验一 阅读
+
 + 阅读VirtualAlloc、VirtualFree、VirtualProtect等函数的官方文档。
 
   + [virtual protect](https://docs.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualprotect)
   + [virtual free](https://docs.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualfree)
   + [virtual alloc](https://docs.microsoft.com/en-us/windows/win32/api/memoryapi/nf-memoryapi-virtualalloc)
+
+
+### 实验二 malloc
 
 + 编程使用malloc分配一段内存，测试是否这段内存所在的整个4KB都可以写入读取。
 
@@ -82,7 +87,8 @@
 
     ![](./image/1.png)
 
-    
+
+### 实验三 virtualAlloc
 
 + 使用VirtualAlloc分配一段，可读可写的内存，写入内存，然后将这段内存改为只读，再读数据和写数据，看是否会有异常情况。然后VirtualFree这段内存，再测试对这段内存的读写释放正常。
 
@@ -292,6 +298,9 @@
 
   + 结论3：内存释放后将无法读取和写入
 
+
+### 实验四 内存地址保护
+
 + 验证不同进程的相同的地址可以保存不同的数据。（1）在VS中，设置固定基地址，编写两个不同可执行文件。同时运行这两个文件。然后使用调试器附加到两个程序的进程，查看内存，看两个程序是否使用了相同的内存地址；（2）在不同的进程中，尝试使用VirtualAlloc分配一块相同地址的内存，写入不同的数据。再读出。
 
   ```c
@@ -317,7 +326,7 @@
 
     ![](./image/t2.png)
 
-  + 执行上述两段代码，查看结果，发现两个程序的地址完全不同，可见不同进程的相同的地址可以保存不同的数据
+  + 执行上述两段代码，查看结果，发现两个程序的地址完全相同，但是正常执行，可见不同进程的相同的地址可以保存不同的数据
 
     ![](./image/t1s.png)
 
@@ -327,35 +336,176 @@
 
     ```c
     #include <windows.h>
-    
+    #include<stdio.h>
     void main()
     {
-     SYSTEM_INFO sf;
-     GetSystemInfo(&sf);
     
-     //分配内存，标记为提交、可读可写
-     LPVOID lpvBase = VirtualAlloc(
-            NULL,                 // system selects address
-            4096,     // size of allocation
-            MEM_COMMIT,   // allocate reserved pages
-            PAGE_READWRITE);       // protection = no access
-       if (lpvBase == NULL )
-       return;
+        SYSTEM_INFO sSysInfo;	// Useful information about the system
+        GetSystemInfo(&sSysInfo);
+        DWORD dwPageSize = sSysInfo.dwPageSize;
+    
+        //分配内存，标记为提交、可读可写
+        LPVOID lpvBase = VirtualAlloc(
+            (LPVOID)0x30000000,	// The starting address of the region to allocate
+            dwPageSize,
+            MEM_COMMIT | MEM_RESERVE,
+            PAGE_READWRITE);
+        if (lpvBase == NULL)
+            return;
+    
+        LPTSTR ustr;
+        ustr = (LPTSTR)lpvBase;
+      
+        for (DWORD i = 0; i < dwPageSize; i++)
+        {
+            ustr[i] = '1'; //test 1用1 ，test2用2
+            printf("%c", ustr[i]);
+        }
+       
     
     
-     //向该内存里面写些东西
-     unsigned char *ustr=(unsigned char *)lpvBase;
-     ustr[0]=0x89;
     
     
-     
+        return;
     
-    
-     return;
-    
-    } 
-    
+    }
     ```
+
+  + 两个程序的结果如下
+  
+    ![](./image/tt1.png)
+  
+    ![](./image/tt2.png)
+  
+  + 可见，相同的内存存入了不同的数据，具有内存保护
+
+### 实验五 windbg
+
++ 配置一个Windbg双机内核调试环境，查阅Windbg的文档，了解（1）Windbg如何在内核调试情况下看物理内存，也就是通过物理地址访问内存（2）如何查看进程的虚拟内存分页表，在分页表中找到物理内存和虚拟内存的对应关系。然后通过Windbg的物理内存查看方式和虚拟内存的查看方式，看同一块物理内存中的数据情况。
+
+  + 装VmWare虚拟机，并自行安装好Windows7系统，虚拟机关闭状态下添加一个管道虚拟串口，此处需要删除打印机，否则串口之间冲突。
+
+    ![](./image/w1.png)
+
+  + 开启虚拟机中的Windows7系统，然后以管理员身份运行CMD命令行，输入`bcdedit`命令，可以查看到系统的当前启动项，如果是新的系统，则只会有一个 `{current}` 的启动项。
+
+    ![](./image/w2.png)
+
+  + 接着我们连续执行下方的三条命令，依次建立启动项，并激活调试模式。
+
+    ```bash
+    
+    bcdedit /copy {current} /d "Windwos7"
+    bcdedit /debug ON
+    bcdedit /bootdebug ON
+    bcdedit /timeout 10
+    ```
+
+    ![](./image/w3.png)
+
+  + 最后查看一下当前调试配置选项，执行命令 `bcdedit /dbgsettings`，显示出使用的第一个串口，波特率为115200bps，保持默认不需要修改。
+
+    ![](./image/w4.png)
+
+  + 配置完成后，重新启动系统，在开机的时候选择`Windows7 [启用调试程序]`则系统会黑屏，说明已经正常进入调试模式了。
+
+    ![](./image/w5.png)
+
+  + 接着回到物理机上面，我们在命令行中切换到WinDBG的根目录下，并执行以下命令，即可连接虚拟机串口进行调试了。
+    执行命令 `Windbg.exe -b -k com:port=\\.\pipe\com_1,baud=115200,pipe` 如下图，已经成功连接上了。
+
+    ![](./image/w6.png)
+
+  + 为了方便调试，可以通过【File菜单】加载一下符号文件，也可以按下【Ctrl+S】并输入。
+    输入命令 `srv*c:\symbols*http://msdl.microsoft.com/download/symbols` 自动下载符号保存到C盘下。
+
+    ![](./image/w7.png)
+
+  + 到此为止，我们的内核调试环境已经配置并能够独立工作了，接下来，我们将手动编译一个简单的驱动文件，并通过WinDBG对其进行调试分析。首先我们需要编写一个简单的驱动程序，由于我们的驱动程序比较的简单，所以我们只能够从DriverEntry驱动开始执行之前下一个断点，此处我们可以通过内联汇编的方式手动加入一个断点，其最终代码如下所示。
+
+    ```c
+    
+    #include <ntddk.h>
+     
+    VOID UnDriver(PDRIVER_OBJECT driver)
+    {
+        DbgPrint(("Uninstall Driver Is OK \n"));
+    }
+     
+    NTSTATUS DriverEntry(IN PDRIVER_OBJECT Driver,PUNICODE_STRING RegistryPath)
+    {
+        __asm{ int 3 }                                // 内联汇编添加 int 3 断点
+        DbgPrint(("hello lyshark \n"));
+        Driver->DriverUnload = UnDriver;
+        return STATUS_SUCCESS;
+    }
+    ```
+
+  + 现在我们启动Windows7系统，并通过上面的方法使之与WinDBG联机，当WinDBG断下时，手动添加符号文件。
+
+    ![](./image/w8.png)
+
+  + 添加符号完成以后，在命令窗口输入g并按下回车键，过程中可能需要按下多次g键，使Windows系统正常加载并运行。
+
+    ![](./image/w9.png)
+
+  + 当Windows系统加载完成以后，拖入我们的驱动文件`wdk.sys`，并通过驱动加载工具加载运行，此时Windows系统会卡死，回到WinDBG中发现已经可以进行源码调试
+
+    ![](./image/w10.png)
+
+    ![](./image/w11.png)
+
+  + 基于上面搭建的调试模式进行物理内存的查看
+
+  + 打开记事本，输入一串字符串（那就”Hello World!“吧。。。）
+
+    ![](./image/w12.png)
+
+  + 然后点击WinDbg的break按钮，使操作系统断下来
+
+    ![](./image/w13.png)
+
+  + 使用 !process 0 0 命令查看当前系统所有进程信息，找到记事本所在进程
+
+    ![](./image/w14.png)
+
+  + 可以看出记事本进程的进程块起始地址为882e4030,因为当前是在系统进程断下，所以此时我们要切换到记事本的进程,使用.process -i 882e4030(进程块地址)命令，在输入 g 命令将WinDbg当前调试进程切换到notepad.exe
+
+    ![](./image/w15.png)
+
+  + 然后我们使用s -u命令再记事本进程中搜索 Hello World! 这个字符串`s -u 0x00000000 L0x01000000 "Hello World!"`
+
+    ![](./image/w16.png)
+
+    
+
+  + 在上面两个地址处都保存有字符串 Hello World！ 我们取第一个虚拟地址0x001ee148，求出此地址在计算机内存内所对应的物理地址。
+    
+  + 以下是Win32 X86下虚拟地址的构成，在开启PAE模式的情况下，一个32位的虚拟地址有以下几部分组成：
+  
+    ![](./image/w17.png)
+  
+  + 0x001ee148这个虚拟地址按照上图进行分解可得----- 00(0)-000000000(0)-111101110(0x1EE)-000101001000(0x148)
+  
+  + CPU中有一个CR3寄存器保存了当前进程的页目录表的的基址 通过 r cr3命令查看cr3寄存器的值，得到cr3=7eaf6540，即为页目录的基址（注意，cr3保存的是物理地址，用WinDbg查看物理地址时要在最前面加上！符号）。因为页目录表索引为0，所以使用 !dq 7eaf6540+0*8查看页目录的基址
+  
+    ![](./image/w18.png)
+  
+  + 页目录和页表的每一项都是8个字节，其中第12-31位保存了页表的基址。从之前对虚拟地址的分解可知，页目录项的索引为0，也就是是第一项，所以页目录的基址为3a4b6000，而页目录索引为0
+  
+    使用！dq 3a4b6000+0*8查看页表的基址
+  
+    ![](./image/w19.png)
+  
+  + 使用！dq db9e000+8*0x1ee找到页基址
+  
+    ![](./image/w20.png)
+  
+  + 可以得到物理地址所在页基址为3cefc000，而字节索引为0x148，再使用！db 3cefc000+0x148查看该地址的内容
+  
+    ![](./image/w21.png)
+  
+  + 这正好是我们的Hello World字符串，所以我们成功地根据虚拟地址通过分页机制找到了物理地址。
 
 ## 实验参考资料
 
@@ -367,4 +517,6 @@
 + [malloc](http://c.biancheng.net/cpp/html/137.html)
 + [虚拟内存详解](https://blog.csdn.net/rankun1/article/details/50449512)
 + [设置基址](https://blog.csdn.net/HappyBear1995/article/details/51126998)
++ [虚拟地址到物理地址的转换](https://blog.csdn.net/rikeyone/article/details/84672000)
++ [windbg](https://blog.csdn.net/weixin_30834019/article/details/95482417)
 
