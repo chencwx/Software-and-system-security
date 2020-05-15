@@ -184,10 +184,236 @@
 
 
 
-## 动手实验
+## 课后实验
 
-+ 搜集市面上主要的路由器厂家、在厂家的官网中寻找可下载的固件在CVE漏洞数据中查找主要的家用路由器厂家的已经公开的漏洞，选择一两个能下载到切有已经公开漏洞的固件。如果能下载对应版本的固件，在QEMU中模拟运行。确定攻击面（对哪个端口那个协议进行Fuzzing测试），尽可能多的抓取攻击面正常的数据包（wireshark）。
+### 实验一
+
++ 搜集市面上主要的路由器厂家、在厂家的官网中寻找可下载的固件在CVE漏洞数据中查找主要的家用路由器厂家的已经公开的漏洞，选择一两个能下载到切有已经公开漏洞的固件。如果能下载对应版本的固件，在QEMU中模拟运行。确定攻击面（对哪个端口那个协议进行Fuzzing测试），尽可能多的抓取攻击面正常的数据包。
+
+  + TP-Link Archer路由器发现的漏洞可允许远程管理账户密码（主要跟着教程学习）
+
+  +  X-Force Red 实验室的Grzegorz Wypych研究人员（又名[@ horac341](https://twitter.com/horac341) ）发现了在TP-Link Archer C5（v4）路由器中发现的固件漏洞。这是一个0 day漏洞，以前没有报告过，并且可能影响家庭和企业环境。如果利用此路由器漏洞，则远程攻击者可以通过局域网（LAN）上的Telnet来控制路由器的配置，并通过LAN或广域网（WAN）连接到文件传输协议（FTP）服务器。
+
+  + 它可以授予未经授权的第三方使用管理员特权访问路由器，而这是所有用户在该设备上的默认设置，而无需进行适当的身份验证。
+
+  + 在深入探究如何发现此漏洞之前，描述此漏洞的简短方法是使用户密码无效的易受攻击的HTTP请求。在各种各样的溢出漏洞中，当将比预期的字符串长度短的字符串作为用户密码发送时，密码值会失真为一些非ASCII字节。但是，如果字符串太长，密码将完全无效，由空值代替。此TP-Link设备仅具有一种用户类型（具有root权限的管理者），并且所有进程均由用户在此访问级别下运行，这可以使攻击者以管理者的身份操作并接管设备。
+
+  + 当我们调查触发脆弱情况的原因时，我们可以看到，只需发送正确的请求即可获得对设备的访问权限
+
+    ![](./image/e1.png)
+
+  + 易受攻击的HTTP POST请求未验证所需的参数,如果该引用从标头中删除，请求将返回一个“禁止访问”响应
+
+    ![](./image/e2.png)
+
+  + 从请求中删除的引用——HTTP响应返回“403禁止”,此漏洞以相同的方式影响HTTP POST和GET请求，当字符串长度超过允许的字节数时，管理密码无效。HTTP GET请求同样会使密码无效
+
+    ![](./image/e3.png)
+
+  + 有了存储芯片的版本号，可以更轻松地在线查找有关它的更多信息，并且我们能够使用芯片夹和二进制文件分析工具BinWalk直接从芯片中提取固件。
+
+    ![](./image/e4.png)
+
+  + 使用BinWalk提取的路由器固件,请注意，在提取期间，有一个RSA私钥存储在内存中。访问Web服务时，此密钥用于加密和解密用户密码。解压缩固件后，我们发现登录数据存储在rootfs / etc文件夹中。默认的用户名和密码非常弱。保留默认组合可以允许访问FTP服务器并授予控制台访问权限。如此弱的密码有很多访问权限，几乎任何人都可以猜到，而且不幸的是，它也是传播诸如Mirai之类的僵尸网络恶意软件的自动攻击的源头。
+
+    ![](./image/e5.png)
+
+  + 通过root级访问，我们现在可以获得对二进制文件的一些控制。我们也有TFTP，所以我们下载了MIPS gdbServer，这是一个用于类Unix系统的控制程序，允许操作员从另一个系统远程调试其他程序。这样，调试器不需要驻留在同一设备上，只需要我们要调试的可执行文件驻留在目标系统上即可。我们将此工具与IDA（一种多处理器反汇编器和调试器）结合使用，以进行静态和动态分析，因此我们可以找到路由器漏洞的来源，并通过此过程来说明如何在找到该漏洞并触发它。下图显示了在IDA上查看的已解析HTTP标头的相关部分：
+
+    ![](./image/e6.png)
+    
+  + 请注意，此处使用函数strncmp来验证带有字符串tplinkwifi.net的Referrer标头。前面还验证了IP地址，附加调试器可以查看这些详细信息，确认这确实是一个可利用的路由器漏洞。我们的下一步是检查当我们使用不同的字符串长度发送易受攻击的请求时，密码文件会如何处理。首先，我们尝试发送一个较短的字符串，只有几个字节。
+
+    ![](./image/e7.png)
+
+  + 使用较短的密码字符串发送HTTP GET请求,该短字符串通过并损坏了密码文件，结果是用户将无法登录，攻击者也将无法登录。此漏洞影响Telnet，FTP和Web服务。
+
+    ![](./image/e8.png)
+
+    
+
+  + 被用户提交的短字节字符串损坏的密码文件,接下来，我们尝试发送长度超过允许字符数的密码。
+
+    ![](./image/e9.png)
+    
+  + 这次，密码完全无效，并且该值现在为空。从现在开始，只使用“admin”作为用户名，即可访问TELNET和FTP，而无需输入任何密码，默认情况下，该用户名是设备上唯一可用的用户。
+    
+    ![](./image/e10.png)
+    
+  + 此时，管理员密码已失效
+
+
+### 实验二
+
++ 查阅BooFuzz的文档，编写这对这个攻击面，这个协议的脚本，进行Fuzzing。配置BooFuzz QEMU的崩溃异常检测，争取触发一次固件崩溃，获得崩溃相关的输入测试样本和日志。尝试使用调试器和IDA-pro监视目标程序的崩溃过程，分析原理。
+
+  + 编写了一段`pyhthon`脚本如下，进行fuzzing 
+
+  ```python
+  
+  def main():
+      port = 9999
+      host = '10.0.2.15'
+      protocol = 'tcp'
+  
+      session = Session(
+              target=Target(
+                  connection = SocketConnection(host, port, proto=protocol),
+              ),
+      )
+  
+      s_initialize("trun")
+      s_string("TRUN", fuzzable=False)
+      s_delim(" ", fuzzable=False)
+      s_string("FUZZ")
+      s_static("\r\n")
+  
+      session.connect(s_get("trun"))
+      session.fuzz()
+  
+  if __name__ == "__main__":
+      main()
+      
+  ```
+
+  + 首先，我们先设置请求，然后定义命令的名称，空格分隔符和参数，最后发送请求，开始fuzz
+
+  + 在fuzz的时候我们可以打开[http://127.0.0.1:26000](http://127.0.0.1:26000/) 上的Web界面中观察fuzz测试进度。这是一个boofuzz内部Web服务器，向我们显示fuzz过程完整性和导致崩溃的输入文件。
+
+    ![](./image/fuz1.png)
+    
+    ![](./image/fu2.png)
+    
+  + 我们可以看到程序已经崩溃，但是fuzz的脚本依然在运行，而且无法精确定位漏洞
+
+  + 这时候我们增加一个回调函数
+
+    ```python
+    session.connect(s_get("trun"), callback=get_banner)
+    ```
+
+    ```python
+    def get_banner(target, my_logger, session, *args, **kwargs):
+        banner_template = "Welcome to Vulnerable Server! Enter HELP for help."
+        try:
+            banner = target.recv(10000)
+        except:
+            print "Unable to connect. Target is down. Exiting."
+            exit(1)
+    
+        my_logger.log_check('Receiving banner..')
+        if banner_template in banner:
+            my_logger.log_pass('banner received')
+        else:
+            my_logger.log_fail('No banner received')
+            print "No banner received, exiting.."
+            exit(1)
+    ```
+
+  + banner在每次fuzz接收后尝试接收字符串，接收不到报异常"Unable to connect. Target is down. Exiting."，如果接收到的字符能够与正常交互的字符串匹配上，我们记录下然后返回fuzz继续测试，如果不匹配程序结束
+
+    ![](./image/fu3.png)
+
+  + 我们可以看出，在程序崩溃后，fuzz停止，接下来我们尝试记录程序崩溃，并找到原因
+
+  + 我们先增加日志记录，首先我们创建一个csv文件，然后创建一个my_logger对象，调用FuzzloggerCsv()函数，Fuzz_loggers记录测试数据和结果
+
+    ```python
+    csv_log = open('fuzz_results.csv', 'wb')
+    my_logger = [FuzzLoggerCsv(file_handle=csv_log)]
+    fuzz_loggers=my_logger,
+    ```
+
+  + 我们首先在端口26002上侦听本地主机的进程，监视应用程序，然后设置选项，我们把程序和process_monitor.py放在同一目录下,需要注意的是process_monitor.py仅限于在windows使用（为Unix提供process_monitor_unix.py），而且需要安装pydasm和pydbg
+
+    ```python
+    procmon=pedrpc.Client(host, 26002),
+            procmon_options = {
+                "proc_name" : "vulnserver.exe",
+                "stop_commands" : ['wmic process where (name="vulnserver") delete'],
+                "start_commands" : ['vulnserver.exe'],
+            }
+    ```
+
+  + 我们运行起来process_monitor.py和fuzz脚本，我们发现EIP被41414141覆盖，并发生崩溃
+
+    ![](./image/fu4.png)
+
+  + 我们查看一下fuzz_result.csv文件，如果我们使用sulley我们需要找到存储流量的PCAP文件 ，并定位payload，而我们使用boofuzz直接查看csv文件就可以,我们可以清晰的看到payload，我们可以用于复现和利用
+
+    ![](./image/fu5.png)
+
+  + 完整的fuzz代码
+
+    ```python
+    from boofuzz import *
+    from sys import exit
+    
+    def get_banner(target, my_logger, session, *args, **kwargs):
+        banner_template = "Welcome to Vulnerable Server! Enter HELP for help."
+        try:
+            banner = target.recv(10000)
+        except:
+            print "Unable to connect. Target is down. Exiting."
+            exit(1)
+    
+        my_logger.log_check('Receiving banner..')
+        if banner_template in banner:
+            my_logger.log_pass('banner received')
+        else:
+            my_logger.log_fail('No banner received')
+            print "No banner received, exiting.."
+            exit(1)
+    
+    def main():
+        port = 9999
+        host = '127.0.0.1'
+        protocol = 'tcp'
+    
+        s_initialize("Vulnserver")
+        s_group("verbs", values=["TRUN", "GMON", "KSTET"])
+    
+        if s_block_start("test", group="verbs"):
+            s_delim(" ")
+            s_string("AAA")
+            s_string("\r\n")
+    
+        s_block_end("test")
+    
+        csv_log = open('fuzz_results.csv', 'wb') 
+        my_logger = [FuzzLoggerCsv(file_handle=csv_log)]   
+        session = Session(
+                target=Target(
+                    connection = SocketConnection(host, port, proto=protocol),
+                    procmon=pedrpc.Client(host, 26002),
+                    procmon_options = {
+                            "proc_name" : "vulnserver.exe",
+                            "stop_commands" : ['wmic process where (name="vulnserver") delete'],
+                            "start_commands" : ['vulnserver.exe'],
+                    }
+                ),
+                fuzz_loggers=my_logger, 
+                crash_threshold_element= 1,# Crash how much times until stop
+        )
+    
+        session.connect(s_get("Vulnserver"), callback=get_banner)
+        session.fuzz()
+    
+    
+    if __name__ == "__main__":
+        main()
+    ```
+
+    
 
   
 
-+ 查阅BooFuzz的文档，编写这对这个攻击面，这个协议的脚本，进行Fuzzing。配置BooFuzz QEMU的崩溃异常检测，争取触发一次固件崩溃，获得崩溃相关的输入测试样本和日志。尝试使用调试器和IDA-pro监视目标程序的崩溃过程，分析原理。
+  
+
+
+
+## 实验参考资料
+
++ [CVE漏洞](https://blog.csdn.net/weixin_34146805/article/details/90361512)
++ [路由器漏洞](https://www.redhat.uno/2004.html)
++ [boofuzz社区](https://xz.aliyun.com/t/5155)
