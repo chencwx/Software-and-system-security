@@ -59,7 +59,247 @@
 
 + 安装并使用cuckoo，任意找一个程序，在cuckoo中trace获取软件行为的基本数据。
 
+  + 实验环境：ubuntu16.04+windows7
+  
++ 主机配置如下：
+  
++ 安装`cuckoo`依赖
+  
+    ```bash
+    sudo apt-get install git mongodb libffi-dev build-essential python-django python python-dev python-pip python-pil python-sqlalchemy python-bson python-dpkt python-jinja2 python-magic python-pymongo python-gridfs python-libvirt python-bottle python-pefile python-chardet tcpdump -y
+  ```
+  
+  ![](./image/C1.png)
+  
++ 安装Tcpdump并确认安装无误：
+  
+    ```bash
+    $ sudo setcap cap_net_raw,cap_net_admin=eip /usr/sbin/tcpdump
+    $ getcap /usr/sbin/tcpdump 
+    /usr/sbin/tcpdump = cap_net_admin,cap_net_raw+eip
+  ```
+  
+  ![](./image/c2.png)
+  
++ 安装Pydeep：
+  
+    ```bash
+    $ wget http://sourceforge.net/projects/ssdeep/files/ssdeep-2.13/ssdeep-2.13.tar.gz/download -O ssdeep-2.13.tar.gz
+    $ tar -zxf ssdeep-2.13.tar.gz
+    $ cd ssdeep-2.13
+    $ ./configure
+    $ make
+    $ sudo make install
+    
+    #确认安装无误
+    $ ssdeep -V
+    Then proceed by installing pydeep:
+    
+    $ sudo pip install pydeep
+    Validate that the package is installed:
+    
+    $ pip show pydeep
+    ---
+    Name: pydeep
+    Version: 0.2
+    Location: /usr/local/lib/python2.7/dist-packages
+    Requires:
+  ```
+  
++ 安装Volatility：
+  
+    ```bash
+    #先安装依赖
+    $ sudo pip install openpyxl
+    $ sudo pip install ujson
+    $ sudo pip install pycrypto
+    $ sudo pip install distorm3
+    $ sudo pip install pytz 
+    
+    #然后安装volatility
+    $ git clone https://github.com/volatilityfoundation/volatility.git
+    $ cd volatility
+    $ python setup.py build
+    $ python setup.py install
+    
+    #确认安装无误
+    $ python vol.py -h
+    
+    
+  ```
+  
++ 安装Cuckoo：
+  
+    ```bash
+    $ git clone git://github.com/cuckoosandbox/cuckoo.git
+    ```
+  
++ 客户机：安装python环境和PIL,Pillow等
+  
++ 网络配置
+  
++ 在virtualbox中添加一块网卡，管理——主机网络管理器，按照下面信息进行设置。
+  
+  ![](./image/host.png)
+  
++ 设置windows 7网络，设置为Host-Only。界面名称为刚刚设置的网卡。
+  
+  ![](./image/in.png)
+  
++ 进入Windows 7 系统，设置win7 ip网络
+  
+  ![](./image/7.png)
+  
++ 检查是否配置成功，主机和客机是否能通信。
 
+  主机中操作
+
+    ```bash
+    $ ping 192.168.56.101
+    ```
+
+  客机中操作
+
+    ```bash
+    $ ping 192.168.56.1
+    
+    ```
+
+
+- 设置IP报文转发，这是在Ubuntu中的操作，因为win7无法上网，所以要通过主机才能访问网络，所以需要以下操作;
+  流量转发服务：
+
+  ```bash
+  $ sudo vim /etc/sysctl.conf
+  net.ipv4.ip_forward=1
+  sudo sysctl -p /etc/systl.conf
+  ```
+
+-  使用iptables提供NAT机制,注意：其中eth0为Ubuntu中的网卡名称，需要提前查看自己Ubuntu中的网卡名称然后修改eth0
+
+   ```bash
+   $ sudo iptables -A FORWARD -o eth0 -i vboxnet0 -s 192.168.56.0/24 -m conntrack --ctstate NEW -j ACCEPT
+   $ sudo iptables -A FORWARD -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+   $ sudo iptables -A POSTROUTING -t nat -j MASQUERADE
+   $ sudo vim /etc/network/interfaces
+   # 新增下列兩行
+   pre-up iptables-restore < /etc/iptables.rules #开机自启动规则
+   post-down iptables-save > /etc/iptables.rules #保存规则
+   sudo apt-get install iptables=persistent
+   sudo netfilter-persistent save
+   #dns
+   $ sudo apt-get install -y dnsmasq
+   $ sudo service dnsmasq start
+   
+   ```
+
++ 此时，win7已经能正常上网
+
++ 设置cuckoo配置文件
+
++ 配置virtualbox.conf
+
+  ```bash
+  $ vim virtualbox.conf
+  machines = cuckoo1 # 指定VirtualBox中Geust OS的虛擬機名稱
+  [cuckoo1] # 對應machines
+  label = cuckoo1  .
+  platform = windows
+  ip = 192.168.56.101 # 指定VirtualBox中Geust OS的IP位置
+  snapshot =snapshot
+  #配置reporting.conf
+  $ vim reporting.conf
+  [jsondump]
+  enabled = yes # no -> yes
+  indent = 4
+  calls = yes
+  [singlefile]
+  # Enable creation of report.html and/or report.pdf?
+  enabled = yes # no -> yes
+  # Enable creation of report.html?
+  html = yes # no -> yes
+  # Enable creation of report.pdf?
+  pdf = yes # no -> yes
+  [mongodb]
+  enabled = yes # no -> yes
+  host = 127.0.0.1
+  port = 27017
+  db = cuckoo
+  store_memdump = yes 
+  paginate = 100
+  #配置cuckoo.conf
+  version_check = no
+  machinery = virtualbox
+  memory_dump = yes
+  [resultserver]
+  ip = 192.168.56.1
+  port = 2042
+  ```
+
++ 启动cuckoo,进入venv中，输入命令启动cuckoo服务：
+
+  ```bash
+  cuckoo
+  ```
+
++ 启动成功后，另外开出一个控制台，启动cuckoo web服务
+
+  ```bash
+  cuckoo web
+  ```
+
++ 启动成功后，会给出一个网站，用浏览器进行打开：
+
+  ![](./image/cuckoo.png)
+
++ 接下来上传程序即可进行沙箱分析，提交样本可使用`cuckoo/utils/submit.py`,`cuckoo submit --url http://www.example.com`，下面是它的帮助信息
+
+  ```bash
+  usage: submit.py [-h] [-d] [--remote REMOTE] [--url] [--package PACKAGE]
+                   [--custom CUSTOM] [--owner OWNER] [--timeout TIMEOUT]
+                   [-o OPTIONS] [--priority PRIORITY] [--machine MACHINE]
+                   [--platform PLATFORM] [--memory] [--enforce-timeout]
+                   [--clock CLOCK] [--tags TAGS] [--baseline] [--max MAX]
+                   [--pattern PATTERN] [--shuffle] [--unique] [--quiet]
+                   [target]
+  
+  positional arguments:
+    target                URL, path to the file or folder to analyze
+  
+  optional arguments:
+    -h, --help            show this help message and exit
+    -d, --debug           Enable debug logging
+    --remote REMOTE       Specify IP:port to a Cuckoo API server to submit
+                          remotely
+    --url                 Specify whether the target is an URL
+    --package PACKAGE     Specify an analysis package
+    --custom CUSTOM       Specify any custom value
+    --owner OWNER         Specify the task owner
+    --timeout TIMEOUT     Specify an analysis timeout
+    -o OPTIONS, --options OPTIONS
+                          Specify options for the analysis package (e.g.
+                          "name=value,name2=value2")
+    --priority PRIORITY   Specify a priority for the analysis represented by an
+                          integer
+    --machine MACHINE     Specify the identifier of a machine you want to use
+    --platform PLATFORM   Specify the operating system platform you want to use
+                          (windows/darwin/linux)
+    --memory              Enable to take a memory dump of the analysis machine
+    --enforce-timeout     Enable to force the analysis to run for the full
+                          timeout period
+    --clock CLOCK         Set virtual machine clock
+    --tags TAGS           Specify tags identifier of a machine you want to use
+    --baseline            Run a baseline analysis
+    --max MAX             Maximum samples to add in a row
+    --pattern PATTERN     Pattern of files to submit
+    --shuffle             Shuffle samples before submitting them
+    --unique              Only submit new samples, ignore duplicates
+    --quiet               Only print text on failure
+  ```
+
++ 下面是我测试的一个程序的分析结果，暂时还看不太懂
+
+  ![](./image/cce.png)
 
 ## 实验参考资料
 
@@ -69,3 +309,5 @@
 + [SSDT IN WINDOWS](https://ired.team/miscellaneous-reversing-forensics/windows-kernel/glimpse-into-ssdt-in-windows-x64-kernel)
 + [pin tools](https://software.intel.com/content/www/us/en/develop/articles/pin-a-dynamic-binary-instrumentation-tool.html)
 + [cuckoo](https://cuckoosandbox.org/)
++ [cuckoo教程](https://www.jianshu.com/p/f623fa0bebf9)
++ [cuckoo博客](https://blog.csdn.net/Bingoooooo_/article/details/94248229)
