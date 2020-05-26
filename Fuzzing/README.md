@@ -339,7 +339,7 @@
 
     ![](./image/fu4.png)
 
-  + 我们查看一下fuzz_result.csv文件，如果我们使用sulley我们需要找到存储流量的PCAP文件 ，并定位payload，而我们使用boofuzz直接查看csv文件就可以,我们可以清晰的看到payload，我们可以用于复现和利用
+  + 我们查看一下fuzz_result.csv文件，如果我们使用sulley（ Sulley适合于网络协议的fuzzing，通过分析网络协议的交互过程，编写python脚本，定制协议报文的格式，大量发送变异报文，对目标进行模糊测试。模糊测试的效率取决于对测试协议的了解与深入分析。）我们需要找到存储流量的PCAP文件 ，并定位payload，而我们使用boofuzz直接查看csv文件就可以,我们可以清晰的看到payload，我们可以用于复现和利用
 
     ![](./image/fu5.png)
 

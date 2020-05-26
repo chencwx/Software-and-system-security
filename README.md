@@ -1,6 +1,6 @@
 # Software-and-system-security
 
-## 实验清单
+## 清单
 
 + httpserver(跨站脚本漏洞课内实验)
 
@@ -12,7 +12,7 @@
 
 + shellcode
 
-+ 二进制安全
++ 二进制安全（无课后实验）
 
 + fuzzing
 
