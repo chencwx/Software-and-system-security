@@ -149,13 +149,13 @@
     # 安装 KLEE
     docker pull klee/klee:2.0
     
-    # 创建一个临时容器
+    # 创建一个临时容器(为了测试实验用)
     docker run --rm -ti --ulimit='stack=-1:-1' klee/klee:2.0
     
     # 创建一个长期容器
-    docker run -ti --name=klee_container --ulimit='stack=-1:-1' klee/klee
+    sudo docker run -ti --name=klee_cwx --ulimit='stack=-1:-1' klee/klee
     # 退出后可通过名字再次进入
-    docker start -ai klee_container
+    sudo docker start -ai klee_cwx
     # 删除长期容器
     docker rm klee_container
     ```
