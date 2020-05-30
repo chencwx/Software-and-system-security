@@ -149,7 +149,7 @@
   
     ```bash
     # 启动 docker
-  systemctl start docker
+    systemctl start docker
     # 安装 KLEE
     docker pull klee/klee:2.0
     
