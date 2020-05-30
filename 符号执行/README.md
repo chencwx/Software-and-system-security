@@ -111,99 +111,65 @@
 
   + 实验环境：virtualbox+ubuntu16.04 server
 
-  + 安装依赖包
+  + 安装`docker`
 
     ```bash
-     $ sudo apt-get install build-essential curl libcap-dev git cmake libncurses5-dev python-minimal python-pip unzip
+    #更新apt包索引：
+    $ sudo apt-get update
+  #安装以下包以使apt可以通过HTTPS使用存储库（repository）：
+    $ sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+  #添加Docker官方的GPG密钥：
+    $ curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+    #使用下面的命令来设置stable存储库：
+    $ sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+    #再更新一下apt包索引：
+    $ sudo apt-get update
+    #安装最新版本的Docker CE：（需要一定时间）
+  $ sudo apt-get install -y docker-ce
     ```
 
-  + 安装LLVM 需要注意：对于不同版本的ubuntu应该到 [LLVM Package Repository](http://llvm.org/apt/) 找到对应版本的。写入source.list 中。
+    ![](./image/docker.png)
 
-    ```bash
-    
-    deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-3.9 main
-     
-    deb-src http://apt.llvm.org/xenial/ llvm-toolchain-xenial-3.9 main
-    ```
-
-    ![](./image/e1.png)
-
-  + 添加repository key并下载llvm 3.9的packages
-
-    ```bash
-    
-    $ wget -O - http://llvm.org/apt/llvm-snapshot.gpg.key|sudo apt-key add -  
-     
-    $ sudo apt-get update  
-     
-    $ sudo apt-get install clang-3.9 lldb-3.9
-    ```
-
-    ![](./image/e2.png)
-
-    ![](./image/e3.png)
-
-  + 需要在~/.bashrc里面改一下PATH：（注意不要在命令行中配置，否则每次开机都得配置一遍）
-
-    ```bash
-    export PATH="/usr/lib/llvm-3.9/bin:$PATH"
-    ```
-
-  + 安装约束解释器：选择的是STP，根据官网中的文档直接配置即可。可选项暂时未配置
-
-  + 安装klee
-
-    ```bash
-    
-    $ git clone https://github.com/jirislaby/klee.git
-     
-    $ cd klee
-     
-    $ git branch -a
-     
-    git checkout remotes/origin/better-paths
-    ```
-
-  + 配置KLEE
-
-    ```bash
-    
-    $ mkdir klee_build_dir
-     
-    $ cd klee_build_dir
-     
-    $ cmake -DENABLE_SOlVER_STP=ON -DENABLE_SYSTEM_TESTS=OFF -DENABLE_UNIT_TESTS=ON ../klee
-    ```
-
-    ![](./image/e4.png)
-
-  + 由于未配置可选项所以要将这些关闭。在cmake的过程中，会提示关闭。提示找不到Doxygen，则需要安装
-
-    ```bash
-     sudo apt-get install doxygen
-    ```
-
-  + 编译安装klee
-
-    ```bash
-    $ sudo make install
-    ```
-
-  + 若出现找不到liblibLLVM-3.9.so.so的情况，参考：http://terenceli.github.io/%E6%8A%80%E6%9C%AF/2017/06/08/klee-newbie
-
-    ```
-    make[2]: *** No rule to make target '/usr/lib/llvm-3.9/lib/liblibLLVM-3.9.so.so', needed by 'bin/gen-random-bout'.
-    ```
-
-  + 则利用软链接。
-
-    ```bash
-    $ ln -L libLLVM-3.9.so liblibLLVM-3.9.so.so
-    ```
-
-  + 官方 tutorial:（新建了一个klee用户便于实验，且环境是新搭建的）
+  + 验证docker安装成功
   
-  + 这个实例完整程序如下，在 `examples/get_sign 目录下，`用来判断一个整数的正，负，或者为0.
+    ```bash
+    #查看docker服务是否启动：
+    $ systemctl status docker
+    #若未启动，则启动docker服务：
+    $ sudo systemctl start docker
+    #经典的hello world：
+    $ sudo docker run hello-world
+    ```
+  
+  + 在`docker`中安装`klee`
+  
+    ```bash
+    # 启动 docker
+  systemctl start docker
+    # 安装 KLEE
+    docker pull klee/klee:2.0
+    
+    # 创建一个临时容器
+    docker run --rm -ti --ulimit='stack=-1:-1' klee/klee:2.0
+    
+    # 创建一个长期容器
+    docker run -ti --name=klee_container --ulimit='stack=-1:-1' klee/klee
+    # 退出后可通过名字再次进入
+    docker start -ai klee_container
+    # 删除长期容器
+    docker rm klee_container
+    ```
+    
+  
+  ![](./image/klee.png)
+  
+
+### tutorial 1: Testing a small function.
+
+
+  + 运行官方 tutorial:（新建了一个klee用户便于实验，且环境是新搭建的）
+  
+  + 这个实例完整程序如下，在 `/klee_src/examples/get_sign` 目录下，用来判断一个整数的正，负，或者为0.
   
     ```c
     
@@ -232,13 +198,15 @@
     ```bash
     clang -I ../../include -emit-llvm -c -g -O0 -Xclang -disable-O0-optnone get_sign.c
     ```
-  
+
+  ![](./image/clang.png)
+
   + 其中，参数-I是为了编译器找到头文件klee/klee.h,-g是为了在字节码文件中添加debug信息，还有后面的，具体不深究，按照官网推荐来。同目录下我们会生成一个get-sign.bc的字节码文件，然后进行测试：
   
     ```bash
     $ klee get_sign.bc
     ```
-
+  
     ![](./image/k1.png)
     
   + 可以看到结果中KLEE给出了总指令数，完整路径和生成的测试案例数。
@@ -256,31 +224,7 @@
       return get_sign(a);
     }
     ```
-  
-  + 编译程序生成LLVM bitcode,KLEE的分析是基于LLVM bitcode的，所以首先需要用llvm-gcc编译c文件生成文件，命令如下：
-  
-    ```bash
-    $ llvm-gcc --emit-llvm -c -g get_sign.c
-    ```
-  
-  + 生成get_sign.o文件，-g参数用于在编译中加入debug信息，以便于产生源代码级别的程序信息。同时编译中不要使用优化设置的参数。
-  
-  + 运行KLEE分析程序
-  
-    ```bash
-     $ klee get_sign.o
-    ```
-  
-  + 可以得到如下的输出：
-  
-    ```bash
-    KLEE: output directory = "klee-out-0"
-    
-        KLEE: done: total instructions = 51
-        KLEE: done: completed paths = 3
-        KLEE: done: generated tests = 3
-    ```
-  
+
   +  从中可以看出，该测试函数有3条路径，并且为每一条路径都生成了一个测试例。KLEE执行输出信息都在文件klee-out-N中，不过最近一次的执行生成的目录由klee-last快捷方式指向。查看生成的文件：
   
     ```bash
@@ -289,37 +233,61 @@
         info             run.stats        test000003.ktest
         messages.txt     test000001.ktest warnings.txt
     ```
-  
+
+  ![](./image/kleelast.png)
+
   + KLEE生成的测试例查看,扩展名为.ktest的都是生成的测试例，这个程序有三条path，所以三个测试例，这些文件都是二进制代码，可以用ktest-tool命令查看，具体如下：
   
     ```bash
-    $ ktest-tool --write-ints klee-last/test000001.ktest
-        ktest file : 'klee-last/test000001.ktest'
-        args       : ['get_sign.o']
-        num objects: 1
-        object    0: name: 'a'
-        object    0: size: 4
-        object    0: data: 1
-    
-        $ ktest-tool --write-ints klee-last/test000002.ktest 
-        ...
-        object    0: data: -2147483648
-    
-        $ ktest-tool --write-ints klee-last/test000003.ktest
-        ...
-        object    0: data: 0
+    $klee@a72909e66efc:~/klee_src/examples/get_sign/klee-out-0$ ktest-tool test000001.ktest
+    ktest file : 'test000001.ktest'
+    args       : ['get_sign.bc']
+    num objects: 1
+    object 0: name: 'a'
+    object 0: size: 4
+    object 0: data: b'\x00\x00\x00\x00'
+    object 0: hex : 0x00000000
+    object 0: int : 0
+    object 0: uint: 0
+    object 0: text: ....
+    $klee@a72909e66efc:~/klee_src/examples/get_sign/klee-out-0$ ktest-tool test000002.ktest
+    ktest file : 'test000002.ktest'
+    args       : ['get_sign.bc']
+    num objects: 1
+    object 0: name: 'a'
+    object 0: size: 4
+    object 0: data: b'\x01\x01\x01\x01'
+    object 0: hex : 0x01010101
+    object 0: int : 16843009
+    object 0: uint: 16843009
+    object 0: text: ....
+    $klee@a72909e66efc:~/klee_src/examples/get_sign/klee-out-0$ ktest-tool test000003.ktest
+    ktest file : 'test000003.ktest'
+    args       : ['get_sign.bc']
+    num objects: 1
+    object 0: name: 'a'
+    object 0: size: 4
+    object 0: data: b'\x00\x00\x00\x80'
+    object 0: hex : 0x00000080
+    object 0: int : -2147483648
+    object 0: uint: 2147483648
+    object 0: text: ....
     ```
-  
-  +  很明显的可以看到，每一个路径对应的输入变量值，分别是1,  -2147483648, 0。
+
+  ![](./image/datat.png)
+
+  +  很明显的可以看到，每一个路径对应的输入变量值
   
   + 利用测试例运行程序, 用生成的测试例作为输入运行程序，命令及结果如下：
   
     ```bash
-     $ export LD_LIBRARY_PATH=path-to-klee-root/Release+Asserts/lib/:$LD_LIBRARY_PATH
-    
-            #LD_LIBRARY_PATH中的path-to-klee-root需要用具体的路径代替，后面的也一样
-        $ gcc -L path-to-klee-root/Release+Asserts/lib/ get_sign.c -lkleeRuntest
-    
+    # 设置除默认路径外查找动态链接库的路径
+    $ export LD_LIBRARY_PATH=path-to-klee-root/Release+Asserts/lib/:$LD_LIBRARY_PATH
+    $ export LD_LIBRARY_PATH=~/klee_build/lib/:$LD_LIBRARY_PATH
+     #LD_LIBRARY_PATH中的path-to-klee-root需要用具体的路径代替，后面的也一样
+     # 将程序与 libkleeRuntest 库链接
+    $ gcc -L path-to-klee-root/Release+Asserts/lib/ get_sign.c -lkleeRuntest
+    $ gcc -I ../../include -L /home/klee/klee_build/lib/ get_sign.c -lkleeRuntest
             #gcc编译生成a.out，一个可执行程序，然后用下面的方式指定其输入为test000001.ktest。
     
         $ KTEST_FILE=klee-last/test000001.ktest ./a.out
@@ -334,10 +302,278 @@
         255
         $ KTEST_FILE=klee-last/test000003.ktest ./a.out
         $ echo $?
-        0
-    ```
-  
+      0
     
+    ```
+
+
+​    ![](./image/ktest.png)
+
+### tutorial 2: Testing a simple regular expression library.
+
++ 示例代码`Regexp.c`位于`/home/klee/klee_src/examples/regexp`目录下，进入该目录下
+
++ 将 C 语言文件编译转化为 LLVM bitcode
+
+  ```bash
+  clang -I ../../include -emit-llvm -c -g -O0 -Xclang -disable-O0-optnone Regexp.c
+  ```
+
++ 使用 KLEE 运行代码：
+
+  ```bash
+  klee --only-output-states-covering-new Regexp.bc
+  ```
+
+  ![](./image/t2.png)
+
++ KLEE 在程序执行时发现了错误，就会生成能触发错误的测试用例，并将关于错误的附加信息写入文件`testN.TYPE.err`（`N`是测试样例编号，`TYPE`指明错误类型）,上图红色部分显示23、25行出现了报错，查看报错信息，分析：出现内存错误，不是因为正则表达式函数有一个错误，而是测试驱动程序有一个错误。因为输入的正则表达式序列完全是符号的，但是match函数期望它是一个以null结尾的字符串。
+
+  ![](./image/me.png)
+
++ 解决方式：将' \0 '符号化后存储在缓冲区的末尾。修改代码如下
+
+  ```c
+  int main() {
+    // The input regular expression.
+    char re[SIZE];
+  
+    // Make the input symbolic.
+    klee_make_symbolic(re, sizeof re, "re");
+    re[SIZE - 1] = '\0';
+  
+    // Try to match against a constant string "hello".
+    match(re, "hello");
+  
+    return 0;
+  }
+  ```
+
+  ![](./image/make.png)
+
++ 再次编译链接，发现错误解决，执行成功
+
+  ![](./image/error.png)
+
+
+
+### tutorial 3:Solving a maze with KLEE
+
++  这是一个11*7的迷宫问题，程序中故意在迷宫的第二行开了一个后门。KLEE通过符号执行找到了所有的解（包括陷阱）。通过这个例子可以完全看到KLEE符号执行的过程，首先是按照符号变量的size每一个字节都是符号值，然后从第一个字节开始一个一个地试验具体值（本例中实验的顺序w->a->d->s,且这4个都会试个遍，然后保存所有可行的具体值，再次基础上在再试验第二个字节，如此下去，知道实验完所有的字节，也就找到了所有的可行路径。）
+
+
++ 首先要下载迷宫的程序
+
+  ```bash
+  # Update aptitude 
+  sudo apt-get update
+  # Install git 
+  sudo apt-get install -y git-core
+  # Download maze 
+  git clone https://github.com/grese/klee-maze.git ~/maze
+  
+  
+  # Build & Run Maze
+  # Source is in maze.c.
+  cd ~/maze
+  
+  #Build: 
+  gcc maze.c -o maze
+  #Run manually: 
+  ./maze
+  #Input a string of "moves" and press "enter"
+  #Allowed moves: w (up), d (right), s (down), a (left)
+  #Example solution: ssssddddwwaawwddddssssddwwww
+  #Run w/solution: 
+  cat solution.txt | ./maze
+  ```
+
+  ![](./image/maze.png)
+
+  ![](./image/ms.png)
+
+  ![](./image/km.png)
+
++ 通过修改源代码，把用户输入改为符号测试，看到所有的测试用例,将read调用改成klee_make_symbolic，在`printf ("You win!\n");`这个语句之后增加一个`klee_assert(0);`，这样每次成功就会又一次assert
+
+  ```c
+  /**
+   * maze_klee.c
+   * The maze from maze.c with Klee "symbolic execution" 
+   * and "assertions" added.
+   * 
+   * Create LLVM bytecode: ./build_bc.sh
+   * 
+   * Run with Klee: ./run_klee.sh
+   * 
+   * Find solutions: ./show_solutions.sh
+   */
+  
+  #include <klee/klee.h>
+  #include <stdlib.h>
+  #include <stdio.h>
+  #include <unistd.h>
+  
+  #define H 7
+  #define W 11
+  #define ITERS 28
+  
+  char maze[H][W] = {
+      "+-+---+---+",
+      "| |     |#|",
+      "| | --+ | |",
+      "| |   | | |",
+      "| +-- | | |",
+      "|     |   |",
+      "+-----+---+"
+  };
+  
+  void draw ()
+  {
+      int i, j;
+      for (i = 0; i < H; i++)
+      {
+          for (j = 0; j < W; j++)
+          {
+              printf("%c", maze[i][j]);
+          }
+          printf("\n");
+      }
+      printf("\n");
+  }
+  
+  int main (int argc, char *argv[])
+  {
+      int x = 1, y = 1;    //Player position
+      int ox, oy;          //Old player position
+      int i = 0;           //Iteration number
+      char program[ITERS];
+  
+      maze[y][x] = 'X';
+  
+      // Use Klee's symbolic execution
+      klee_make_symbolic(program, ITERS, "program");
+  
+      while(i < ITERS)
+      {
+          //Save old player position
+          ox = x;
+          oy = y;
+  
+          switch (program[i])
+          {
+          case 'w':
+              y--;
+              break;
+          case 's':
+              y++;
+              break;
+          case 'a':
+              x--;
+              break;
+          case 'd':
+              x++;
+              break;
+          default:
+              printf("Wrong command! (only w,s,a,d accepted!)\n");
+              printf("You lose!\n");
+              exit(-1);
+          }
+  
+          if (maze[y][x] == '#')
+          {
+              printf("You win!\n");
+              printf("Your solution %s\n", program);
+              klee_assert(0); // Klee assertion identifies the win
+              exit(1);
+          }
+  
+          if (maze[y][x] != ' ' && !((y == 2 && maze[y][x] == '|' && x > 0 && x < W)))
+          {
+              x = ox;
+              y = oy;
+          }
+  
+          if (ox==x && oy==y)
+          {
+              printf("You lose\n");
+              exit(-2);
+          }
+  
+          maze[y][x]='X';
+          draw();    //draw it
+  
+          i++;
+          sleep(1);    //wait for next input
+      }
+  
+      printf("You lose\n");
+  }
+  ```
+
+  ![](./image/code.png)
+
++ 接下来对修改后的源文件进行编译测试，可以得到所有成功以及失败的例子，并在`show_solutions.sh`中看到成功的例子
+
+  ```bash
+  cd ~/maze
+  #Build LLVM Bytecode: 
+  ./scripts/build_bc.sh #(builds "maze_klee.bc" using "clang -emit-llvm")
+  #Ignore the "implicit declaration of function '__assert_fail'" warning.
+  #Run Klee on Bytecode: 
+  ./scripts/run_klee.sh #(runs klee on "maze_klee.bc" using "--emit-all-errors")
+  #Show solutions: 
+  ./scripts/show_solutions.sh #(gets klee test results from "ktest-tool", and prints maze solutions)
+  klee@a72909e66efc:~/maze$ ./scripts/show_solutions.sh
+  
+  TESTID       SOLUTION
+  test000135:  sddwddddsddw................
+  test000211:  ssssddddwwaawwddddsddw......
+  test000251:  sddwddddssssddwwww..........
+  test000301:  ssssddddwwaawwddddssssddwwww
+  ```
+
+  ![](./image/all.png)
+
+  ![](./image/ex.png)
+
++ 再使用刚刚获得的四个例子去测试，发现均能`win`，说明符号执行确实成功了
+  
+  ![](./image/win1.png)
+  
+  ![](./image/win2.png)
+  
+  ![](./image/win3.png)
+  
+  ![](./image/win4.png)
+  
+  
+  
++ 下面是操作的录屏
+  
+  ![](./image/maze.gif)
+  
+  
+  
+  
+  
+  
+
+## 实验所遇问题
+
++ docker中居然没有自带`vim`，安装`vim`又需要apt update，这又需要换源，换源又需要用到`vim`，进入了死循环，输入以下命令解决
+
+  ```bash
+  mv /etc/apt/sources.list /etc/apt/sources.list.bak
+  echo "deb http://mirrors.163.com/debian/ jessie main non-free contrib" >> /etc/apt/sources.list
+  echo "deb http://mirrors.163.com/debian/ jessie-proposed-updates main non-free contrib" >>/etc/apt/sources.list
+  echo "deb-src http://mirrors.163.com/debian/ jessie main non-free contrib" >>/etc/apt/sources.list
+  echo "deb-src http://mirrors.163.com/debian/ jessie-proposed-updates main non-free contrib" >>/etc/apt/sources.list
+  ```
+
+  
+
+
 
 ## 实验参考资料
 
@@ -345,3 +581,6 @@
 + [编译klee](https://blog.csdn.net/melissa_cjt/article/details/74995527)
 + [apt-get出错](https://blog.csdn.net/zyxlinux888/article/details/6358615)
 + [klee教程](https://blog.csdn.net/qq_26736193/article/details/103455451)
++ [安装docker](https://www.cnblogs.com/jiyang2008/p/9014960.html)
++ [docker下载包出错](https://blog.csdn.net/qq_37189082/article/details/100047697)
++ [klee-maze](https://github.com/grese/klee-maze)
