@@ -116,20 +116,24 @@
     ```bash
     #更新apt包索引：
     $ sudo apt-get update
-  #安装以下包以使apt可以通过HTTPS使用存储库（repository）：
+    #安装以下包以使apt可以通过HTTPS使用存储库（repository）：
     $ sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
-  #添加Docker官方的GPG密钥：
+    #添加Docker官方的GPG密钥：
     $ curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
     #使用下面的命令来设置stable存储库：
     $ sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
     #再更新一下apt包索引：
     $ sudo apt-get update
     #安装最新版本的Docker CE：（需要一定时间）
-  $ sudo apt-get install -y docker-ce
+    $ sudo apt-get install -y docker-ce
     ```
 
-    ![](./image/docker.png)
+    
 
+    
+  
+    ![](./image/docker.png)
+  
   + 验证docker安装成功
   
     ```bash
