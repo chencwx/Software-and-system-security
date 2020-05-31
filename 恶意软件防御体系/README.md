@@ -60,6 +60,7 @@
 + 安装并使用cuckoo，任意找一个程序，在cuckoo中trace获取软件行为的基本数据。
 
   + 实验环境：ubuntu16.04+windows7
+  + 实验原理：cuckoo在部署阶段，在Guest系统里塞了一个agent，这个agent在运行阶段负责与Host端程序进行通信，从Host端接收sample, 整个客户端程序，以及配置文件。Cuckoo 的架构比较简单，在 Host 机上运行 Cuckoo 主程序，多个 Guest 机通过虚拟网络与 Host 机相连
   
 + 主机配置如下：
   
@@ -131,10 +132,27 @@
 + 安装Cuckoo：
   
     ```bash
-    $ git clone git://github.com/cuckoosandbox/cuckoo.git
-    ```
+    #建议在virtualenv中安装（virtualenv就是用来为一个应用创建一套“隔离”的Python运行环境。）
+    
+  $ virtualenv venv
+  $ . venv/bin/activate
+  (venv)$ pip install -U pip setuptools
+  (venv)$ pip install -U cuckoo
+  ```
   
-+ 客户机：安装python环境和PIL,Pillow等
+  ![](./image/koo.png)
+  
++ 安装成功后进入如下界面
+
+    ![](./image/su.png)
+
++ 检查是否生成CWD文件 ，文件路径： /home/username(你的用户名)/.cuckoo/agent/agent.py 如果username下没有出现.cuckoo文件，因为它是隐藏文件可以使用快捷键ctrl+H显示隐藏文件。
+
++ 客户机（win7）：安装python环境和PIL,Pillow等，关闭防火墙、自动更新等
+  
+  ![](./image/close.png)
+  
+  ![](./image/uodate.png)
   
 + 网络配置
   
@@ -162,7 +180,6 @@
 
     ```bash
     $ ping 192.168.56.1
-    
     ```
 
 
@@ -175,6 +192,8 @@
   sudo sysctl -p /etc/systl.conf
   ```
 
+  ![](./image/ip.png)
+  
 -  使用iptables提供NAT机制,注意：其中eth0为Ubuntu中的网卡名称，需要提前查看自己Ubuntu中的网卡名称然后修改eth0
 
    ```bash
@@ -245,7 +264,7 @@
 + 启动成功后，另外开出一个控制台，启动cuckoo web服务
 
   ```bash
-  cuckoo web
+  cuckoo web runserver
   ```
 
 + 启动成功后，会给出一个网站，用浏览器进行打开：
@@ -311,3 +330,4 @@
 + [cuckoo](https://cuckoosandbox.org/)
 + [cuckoo教程](https://www.jianshu.com/p/f623fa0bebf9)
 + [cuckoo博客](https://blog.csdn.net/Bingoooooo_/article/details/94248229)
++ [cuckoo依赖](https://cuckoo.sh/docs/installation/host/requirements.html)
