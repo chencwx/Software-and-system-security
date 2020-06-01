@@ -186,7 +186,7 @@
 
 ## 课后实验
 
-### 实验一
+### 实验一（TP-Link Archer路由器漏洞学习）
 
 + 搜集市面上主要的路由器厂家、在厂家的官网中寻找可下载的固件在CVE漏洞数据中查找主要的家用路由器厂家的已经公开的漏洞，选择一两个能下载到切有已经公开漏洞的固件。如果能下载对应版本的固件，在QEMU中模拟运行。确定攻击面（对哪个端口那个协议进行Fuzzing测试），尽可能多的抓取攻击面正常的数据包。
 
@@ -210,18 +210,22 @@
 
     ![](./image/e3.png)
 
-  + 有了存储芯片的版本号，可以更轻松地在线查找有关它的更多信息，并且我们能够使用芯片夹和二进制文件分析工具BinWalk直接从芯片中提取固件。
+  + 有了存储芯片的版本号，可以更轻松地在线查找有关它的更多信息，并且我们能够使用芯片夹和二进制文件分析工具BinWalk直接从芯片中提取固件。首先要先安装`binwalk`
+
+    ```bash
+  sudo apt install binwalk
+    ```
 
     ![](./image/e4.png)
 
   + 使用BinWalk提取的路由器固件,请注意，在提取期间，有一个RSA私钥存储在内存中。访问Web服务时，此密钥用于加密和解密用户密码。解压缩固件后，我们发现登录数据存储在rootfs / etc文件夹中。默认的用户名和密码非常弱。保留默认组合可以允许访问FTP服务器并授予控制台访问权限。如此弱的密码有很多访问权限，几乎任何人都可以猜到，而且不幸的是，它也是传播诸如Mirai之类的僵尸网络恶意软件的自动攻击的源头。
 
     ![](./image/e5.png)
-
+  
   + 通过root级访问，我们现在可以获得对二进制文件的一些控制。我们也有TFTP，所以我们下载了MIPS gdbServer，这是一个用于类Unix系统的控制程序，允许操作员从另一个系统远程调试其他程序。这样，调试器不需要驻留在同一设备上，只需要我们要调试的可执行文件驻留在目标系统上即可。我们将此工具与IDA（一种多处理器反汇编器和调试器）结合使用，以进行静态和动态分析，因此我们可以找到路由器漏洞的来源，并通过此过程来说明如何在找到该漏洞并触发它。下图显示了在IDA上查看的已解析HTTP标头的相关部分：
 
     ![](./image/e6.png)
-    
+  
   + 请注意，此处使用函数strncmp来验证带有字符串tplinkwifi.net的Referrer标头。前面还验证了IP地址，附加调试器可以查看这些详细信息，确认这确实是一个可利用的路由器漏洞。我们的下一步是检查当我们使用不同的字符串长度发送易受攻击的请求时，密码文件会如何处理。首先，我们尝试发送一个较短的字符串，只有几个字节。
 
     ![](./image/e7.png)
@@ -231,9 +235,9 @@
     ![](./image/e8.png)
 
     
-
+  
   + 被用户提交的短字节字符串损坏的密码文件,接下来，我们尝试发送长度超过允许字符数的密码。
-
+  
     ![](./image/e9.png)
     
   + 这次，密码完全无效，并且该值现在为空。从现在开始，只使用“admin”作为用户名，即可访问TELNET和FTP，而无需输入任何密码，默认情况下，该用户名是设备上唯一可用的用户。
@@ -242,173 +246,421 @@
     
   + 此时，管理员密码已失效
 
+### 实验二（QEMU模拟运行路由器）（太多坑了！！！！）
 
-### 实验二
++ 搜集市面上主要的路由器厂家、在厂家的官网中寻找可下载的固件在CVE漏洞数据中查找主要的家用路由器厂家的已经公开的漏洞，选择一两个能下载到切有已经公开漏洞的固件。如果能下载对应版本的固件，在QEMU中模拟运行。确定攻击面（对哪个端口那个协议进行Fuzzing测试），尽可能多的抓取攻击面正常的数据包。
+
++ 物联网设备固件分析：Firmadyne固件模拟环境搭建
+
+  > Firmadyne是一款自动化分析嵌入式Linux系统安全的开源软件，由卡内基梅隆大学的Daming D. Chen开发完成的。它支持批量检测，整个系统包括固件的爬取、root文件系统的提取、QEMU模拟执行以及漏洞的挖掘。
+
++ 实验工具：
+
+  > Firmadyne
+  > 项目地址：https://github.com/firmadyne/firmadyne
+  > README.md中有详细的配置和安装步骤
+  > Firmware Analysis Toolkit
+  > 项目地址：https://github.com/attify/firmware-analysis-toolkit
+  > 该工具集包含了binwalk、Firmadyne等必须的工具。这里我们只需要克隆该仓库到本地即可
+  > qemu
+  > 可以直接用apt-get安装，只安装一部分
+  > 也可以从github的仓库编译安装所有的模块
+
+#### 1克隆`Firmware Analysis Toolkit`工具集仓库
+
+```bash
+
+# 1. 安装依赖
+sudo apt-get install busybox-static fakeroot git dmsetup kpartx netcat-openbsd nmap python-psycopg2 python3-psycopg2 snmp uml-utilities util-linux vlan
+
+# 2. clone 
+git clone --recursive https://github.com/attify/firmware-analysis-toolkit.git
+```
+
+#### 2 安装binwalk
+
+```bash
+# 1. 安装依赖和binwalk
+#cd firmware-analysis-toolkit/binwalk
+#sudo ./deps.sh
+#sudo python setup.py install
+sudo apt install binwalk
+# 2. 对于 python2.x，还需要安装以下的库
+sudo -H pip install git+https://github.com/ahupp/python-magic
+sudo -H pip install git+https://github.com/sviehb/jefferson
+```
+
++ 测试是否安装成功：
+
+  ```bash
+  cwx@ubuntu:~/firmware-analysis-toolkit$ binwalk
+  
+  Binwalk v2.1.1
+  Craig Heffner, http://www.binwalk.org
+  
+  Usage: binwalk [OPTIONS] [FILE1] [FILE2] [FILE3] ...
+  
+  Signature Scan Options:
+      -B, --signature              Scan target file(s) for common file signatures
+      -R, --raw=<str>              Scan target file(s) for the specified sequence of bytes
+      -A, --opcodes                Scan target file(s) for common executable opcode signatures
+      -m, --magic=<file>           Specify a custom magic file to use
+      -b, --dumb                   Disable smart signature keywords
+      -I, --invalid                Show results marked as invalid
+      -x, --exclude=<str>          Exclude results that match <str>
+      -y, --include=<str>          Only show results that match <str>
+  ...
+  ```
+
+  ![](./image/bin.png)
+
+####  3 安装Firmadyne
+
++ 进入Firmadyne目录，然后打开`firmadyne.config`，修改 FIRMWARE_DIR的路径为当前Firmadyne目录的绝对路径
+
+  ```bash
+  git clone https://github.com/firmadyne/firmadyne
+  cd firmware-analysis-toolkit/firmadyne
+  
+  vim firmadyne.config
+  
+  # 以下为firmadyne.config中的内容
+  #!/bin/sh
+  
+  # uncomment and specify full path to FIRMADYNE repository
+  FIRMWARE_DIR=/home/hzy/firmware-analysis-toolkit/firmadyne/
+  
+  # specify full paths to other directories
+  BINARY_DIR=${FIRMWARE_DIR}/binaries/
+  TARBALL_DIR=${FIRMWARE_DIR}/images/
+  SCRATCH_DIR=${FIRMWARE_DIR}/scratch/
+  SCRIPT_DIR=${FIRMWARE_DIR}/scripts/
+  
+  # functions to safely compute other paths
+  
+  ... ...
+  ```
+
+  ![](./image/firm.png)
+
++ 安装Firmadyne
+
+  ```bash
+  sh ./download.sh
+  sudo ./setup.sh #for a long long time 
+  ```
+
+  ![](./image/sh.png)
+
+#### 4 安装postgresql数据库
+
+```bash
+sudo apt-get install postgresql
+
+# 用户的密码设置为：firmadyne
+sudo -u postgres createuser -P firmadyne, with password firmadyne
+
+sudo -u postgres createdb -O firmadyne firmware
+
+# 注意这里的数据库文件是在firmadyne/目录下，也就是该命令要在根目录firmware-analysis-toolkit/目录下执行
+sudo -u postgres psql -d firmware < ./firmadyne/database/schema
+```
+
++ 启动postgresql数据库，确认其正在运行。
+
+  + 这里我在kali测试的时候，如果没有先启动数据库，就进行添加用户的命令会报错。
+
+  + 还遇到了一个问题，明明数据库服务在运行，但是添加用户的时候一直报的错也是服务没有运行的错，这种情况下我是直接重装了一遍postgresql
+
+  + 具体出现的错大家可以在网上搜索解决方案即可。一般还是有现成的方法的。
+
+    ```bash
+    sudo service postgresql start
+    
+    sudo service postgresql status
+    ```
+
+#### 5 安装qemu
+
+> QEMU是一套由法布里斯·贝拉(Fabrice Bellard)所编写的以GPL许可证分发源码的模拟处理器，在GNU/Linux平台上使用广泛。
+
++ 直接安装
+
+  ```bash
+  sudo apt-get install qemu-system-arm qemu-system-mips qemu-system-x86 qemu-utils
+  ```
+
+  ![](./image/qemu.png)
+
+#### 6 测试运行
+
++ 将firmware-analysis-toolkit/目录下的fat.py和reset.py移动到firmadyne/目录下：
+
+  ```bash
+  mv fat.py ./firmadyne
+  mv reset.py ./firmadyne
+  ```
+
++ 修改fat.py中的执行权限、firmadyne的路径`firmadyne_path`以及root密码`root_pass`
+
+  ```bash
+  chmod +x fat.py
+  
+  vim fat.py
+  # 以下是fat.py中的内容
+  
+  #!/usr/bin/env python2.7
+  
+  import os
+  import pexpect
+  import sys
+  
+  # Put this script in the firmadyne path downloadable from
+  # https://github.com/firmadyne/firmadyne
+  
+  #Configurations - change this according to your system
+  firmadyne_path = "/home/hzy/firmware-analysis-toolkit/firmadyne"
+  binwalk_path = "/usr/local/bin/binwalk"
+  root_pass = "123456"
+  firmadyne_pass = "firmadyne"
+  
+  ... ...
+  
+  ```
+
+  ![](./image/ttt.png)
+
+  ![](./image/fat.png)
+
++ 下载要模拟的路由器固件
+
+  + 要模拟的路由器为：WNAP320
+
+  + 在https://www.netgear.com/support/product/WNAP320.aspx中下载固件
+
+    ```bash
+    wget http://www.downloads.netgear.com/files/GDC/WNAP320/WNAP320_V3.7.11.4.zip
+    ```
+
+    ![](./image/wget.png)
+
+  + 假设我这里将固件文件重命名为 netgear.zip，并放在 /firmware/目录下
+
++ 测试运行
+
+  ```bash
+  cwx@ubuntu:~/firmware-analysis-toolkit/firmadyne$ sudo ./fat.py 
+  [sudo] password for hzy: 
+  
+                                 __           _   
+                                / _|         | |  
+                               | |_    __ _  | |_ 
+                               |  _|  / _` | | __|
+                               | |   | (_| | | |_ 
+                               |_|    \__,_|  \__|                    
+                      
+                  Welcome to the Firmware Analysis Toolkit - v0.2
+      Offensive IoT Exploitation Training  - http://offensiveiotexploitation.com
+                    By Attify - https://attify.com  | @attifyme
+      
+  [?] Enter the name or absolute path of the firmware you want to analyse : /home/hzy/firmware/netgear.zip
+  [?] Enter the brand of the firmware : Netgear
+  [+] Now going to extract the firmware. Hold on..
+  [+] Firmware : /home/hzy/firmware/netgear.zip
+  [+] Brand : Netgear
+  [+] Database image ID : 2
+  [+] Identifying architecture
+  [+] Architecture : mipseb
+  [+] Storing filesystem in database
+  [!] Filesystem already exists
+  [+] Building QEMU disk image
+  [+] Setting up the network connection, please standby
+  [+] Network interfaces : [('brtrunk', '192.168.0.100')]
+  [+] Running the firmware finally
+  [+] command line : sudo /home/hzy/firmware-analysis-toolkit/firmadyne/scratch/2/run.sh
+  [*] Press ENTER to run the firmware...
+  
+  ```
+
++ 从`[+] Network interfaces : [('brtrunk', '192.168.0.100')]`可以看到，启动了一个服务，可以通过192.168.0.100访问
+
+  接下来按`Enter`键运行该固件，等运行完了以后就可以从浏览器访问了：
+
+  ![](./image/login.png)
+
+
+
+### 实验三 （DLink RCE漏洞CVE-2019-17621分析）
+
++ [漏洞分析](https://www.freebuf.com/vuls/228726.html)，(该路由器并没有在QEMU中运行成功┭┮﹏┭┮)
+
+
+### 实验四（boofuzz脚本编写）
 
 + 查阅BooFuzz的文档，编写这对这个攻击面，这个协议的脚本，进行Fuzzing。配置BooFuzz QEMU的崩溃异常检测，争取触发一次固件崩溃，获得崩溃相关的输入测试样本和日志。尝试使用调试器和IDA-pro监视目标程序的崩溃过程，分析原理。
 
-  + 编写了一段`pyhthon`脚本如下，进行fuzzing 
+  + 以下是boofuzz测试的流程图
+  
+  ![](./image/lc.png)
+  
+  
+  
+#### 根据API接口的数据包构造请求
+
+  + 首先， 我们要根据API接口的数据包构造请求，我们要对路由器的登录接口进行fuzz测试，首先需要使用Burpsuite设置代理，进行抓包。以下为Burpsuite抓包结果
+  
+    ![](./image/bw.png)
+  
+  + 现在需要根据报文，利用boofuzz框架提供的原语对http请求进行定义
+  
+    ```python
+    s_initialize(name="Request")
+        with s_block("Request-Line"):
+            # LINE 1
+            s_static("POST", name="Method")
+            s_delim(" ", name='space-1')
+            s_string("/fromLogin", name='Request-URI')  # 需要变异
+            s_delim(" ", name='space-2')
+            s_static('HTTP/1.1', name='HTTP-Version')   
+            s_static("\r\n")
+    
+            # LINE 2
+            s_static("Host", name="Host")
+            s_static(": ")
+            s_static("192.168.10.1", name="ip")
+            s_static("\r\n")
+    
+            # LINE 3  对应 Content-Length: 400
+            s_static('Content-Length')
+            s_static(': ')
+            s_size('data', output_format='ascii', fuzzable=True)    # size的值根据data部分的长度自动进行计算，同时对该字段进行fuzz
+            s_static('\r\n')
+    
+            # ...
+        	s_static('\r\n')
+    
+        # 对应http请求数据
+        with s_block('data'):
+            s_static('login_name=&curTime=1581845487827&setLang=&setNoAutoLang=&login_n=admin&login_pass=')
+            s_string('123456', max_len=1024)	# 需要变异，且最大长度为1024
+            s_static('&languageSel=1')
+    ```
+    
+    
+    
+#### 设置会话信息
+
++ 以下是最简单的一个会话的设置，包括设备的IP地址以及端口
+
+  ```bash
+  session = Session(
+          target=Target(
+              connection=SocketConnection("192.168.10.1", 80, proto='tcp')
+              netmon=Remote_NetworkMonitor(host, port, proto='tcp'))  # 服务可用性监控 非必须代码
+          ),
+      )
+  ```
+
++ 如果需要fuzz多个请求，比如说，还要继续fuzz登录后的一些接口，还需要将之前定义的请求按照一定的先后顺序连接，比如说
 
   ```python
+  session.connect(s_get('login'))		# 默认前置节点为root
+  session.connect(s_get('login'), s_get('setsysemailsettings'), callback=add_auth_callback)
+  session.connect(s_get('login'),s_get('setsyslogsettings'), callback=add_auth_callback)
+  session.connect(s_get('login'),s_get('setschedulesettings'), callback=add_auth_callback)
+  ```
+
++ 由于setsysemailsettings、setsyslogsettings、setschedulesettings等请求需要在登录之后才可以正常使用，所以需要在login请求之后发生。而setsysemailsettings、setsyslogsettings和setschedulesettings这几个请求之间则没有明确的先后关系。add_auth_callback为自定义的回调函数，主要用于从login请求中获取用于登录认证的信息如cookie，然后将其设置于setsysemailsettings、setsyslogsettings、setschedulesettings等请求中。
+
+#### 添加监视器
+
++ 通过当前设备是否在线，就是判断目标设备是否崩溃的方法之一。结合`Step 2`中，我们已经引用的函数`Remote_NetworkMonitor()`，其核心代码如下
+
+  ```python
+  # 通过TCP全连接来判断目标端口是否在监听（网络安全实验学过的代码用上了）
+  if self.proto == "tcp" or self.proto == "ssl":
+      try:
+          self._sock.connect((self.host, self.port))
+          self.alive_flag = 1
+      except socket.error as e:
+     		self.alive_flag = 0
+  ```
+
+#### 开始fuzz
+
++ 最后只需要调用session.fuzz() 即可。运行我们编写好的脚本，每次运行的日志数据将保存到当前工作目录下boofuzz-results目录中的SQLite数据库中，运行boo open <run-*.db>，会在26000端口开启一个Web服务器，控制和查看测试进度（某些版本，运行fuzz脚本，会自动打开26000端口，所以只需要打开如下页面即可）。
+
+  ![](./image/running.png)
+
++ 上图表明，第238个用例测试结果出现了异常。*tips：在打开数据库监控状态的时候，如果提示26000端口已经占用，可以使用`netstat -anp | grep 26000`找到进程，并杀死即可*
+
++ 具体的原因，就要靠我们自己进行后续的分析了。可以使用数据库查看软件，Kali自带 `DB Browser for SQLite`，打开 boofuzz-results 目录下的相关文件可看到fuzz的日志
+
+  ![](./image/ps.png)
+
++ 从数据库中可以看到，的确是按照我们的代码，对相关字段进行变异，从而达到fuzz的效果。进一步观察238个用例的前一个用例，找到发送的内容，重新发送，观察设备状态，看问题是否能够复现，最终确定漏洞是否存在。
+
++ 完整fuzzing代码如下
+
+  ```python
+  #!/usr/bin/env python
+  # Designed for use with boofuzz v0.0.9
+  # coding=utf-8
+  from boofuzz import *
+  
   
   def main():
-      port = 9999
-      host = '10.0.2.15'
-      protocol = 'tcp'
-  
       session = Session(
-              target=Target(
-                  connection = SocketConnection(host, port, proto=protocol),
-              ),
+          target=Target(
+              connection=SocketConnection("192.168.10.1", 80, proto='tcp')
+          ),
       )
   
-      s_initialize("trun")
-      s_string("TRUN", fuzzable=False)
-      s_delim(" ", fuzzable=False)
-      s_string("FUZZ")
-      s_static("\r\n")
+      s_initialize(name="Request")
+      with s_block("Request-Line"):
+          # LINE 1
+          s_static("POST", name="Method")
+          s_delim(" ", name='space-1')
+          s_string("/fromLogin", name='Request-URI')  # variation
+          s_delim(" ", name='space-2')
+          s_static('HTTP/1.1', name='HTTP-Version')   
+          s_static("\r\n")
   
-      session.connect(s_get("trun"))
+          # LINE 2
+          s_static("Host", name="Host")
+          s_static(": ")
+          s_static("192.168.10.1", name="ip")
+          s_static("\r\n")
+  
+          # LINE 3  对应 Content-Length: 400
+          s_static('Content-Length')
+          s_static(': ')
+          s_size('data', output_format='ascii', fuzzable=True)    # size的值根据data部分的长度自动进行计算，同时对该字段进行fuzz
+          s_static('\r\n')
+  
+          # ...
+          s_static('\r\n')
+  
+      # 对应http请求数据
+      with s_block('data'):
+          s_static('login_name=&curTime=1581845487827&setLang=&setNoAutoLang=&login_n=admin&login_pass=')
+          s_string('123456', max_len=1024)
+          s_static('&languageSel=1')
+  
+  
+      session.connect(s_get("Request"))
+  
       session.fuzz()
+  
   
   if __name__ == "__main__":
       main()
-      
   ```
 
-  + 首先，我们先设置请求，然后定义命令的名称，空格分隔符和参数，最后发送请求，开始fuzz
-
-  + 在fuzz的时候我们可以打开[http://127.0.0.1:26000](http://127.0.0.1:26000/) 上的Web界面中观察fuzz测试进度。这是一个boofuzz内部Web服务器，向我们显示fuzz过程完整性和导致崩溃的输入文件。
-
-    ![](./image/fuz1.png)
-    
-    ![](./image/fu2.png)
-    
-  + 我们可以看到程序已经崩溃，但是fuzz的脚本依然在运行，而且无法精确定位漏洞
-
-  + 这时候我们增加一个回调函数
-
-    ```python
-    session.connect(s_get("trun"), callback=get_banner)
-    ```
-
-    ```python
-    def get_banner(target, my_logger, session, *args, **kwargs):
-        banner_template = "Welcome to Vulnerable Server! Enter HELP for help."
-        try:
-            banner = target.recv(10000)
-        except:
-            print "Unable to connect. Target is down. Exiting."
-            exit(1)
-    
-        my_logger.log_check('Receiving banner..')
-        if banner_template in banner:
-            my_logger.log_pass('banner received')
-        else:
-            my_logger.log_fail('No banner received')
-            print "No banner received, exiting.."
-            exit(1)
-    ```
-
-  + banner在每次fuzz接收后尝试接收字符串，接收不到报异常"Unable to connect. Target is down. Exiting."，如果接收到的字符能够与正常交互的字符串匹配上，我们记录下然后返回fuzz继续测试，如果不匹配程序结束
-
-    ![](./image/fu3.png)
-
-  + 我们可以看出，在程序崩溃后，fuzz停止，接下来我们尝试记录程序崩溃，并找到原因
-
-  + 我们先增加日志记录，首先我们创建一个csv文件，然后创建一个my_logger对象，调用FuzzloggerCsv()函数，Fuzz_loggers记录测试数据和结果
-
-    ```python
-    csv_log = open('fuzz_results.csv', 'wb')
-    my_logger = [FuzzLoggerCsv(file_handle=csv_log)]
-    fuzz_loggers=my_logger,
-    ```
-
-  + 我们首先在端口26002上侦听本地主机的进程，监视应用程序，然后设置选项，我们把程序和process_monitor.py放在同一目录下,需要注意的是process_monitor.py仅限于在windows使用（为Unix提供process_monitor_unix.py），而且需要安装pydasm和pydbg
-
-    ```python
-    procmon=pedrpc.Client(host, 26002),
-            procmon_options = {
-                "proc_name" : "vulnserver.exe",
-                "stop_commands" : ['wmic process where (name="vulnserver") delete'],
-                "start_commands" : ['vulnserver.exe'],
-            }
-    ```
-
-  + 我们运行起来process_monitor.py和fuzz脚本，我们发现EIP被41414141覆盖，并发生崩溃
-
-    ![](./image/fu4.png)
-
-  + 我们查看一下fuzz_result.csv文件，如果我们使用sulley（ Sulley适合于网络协议的fuzzing，通过分析网络协议的交互过程，编写python脚本，定制协议报文的格式，大量发送变异报文，对目标进行模糊测试。模糊测试的效率取决于对测试协议的了解与深入分析。）我们需要找到存储流量的PCAP文件 ，并定位payload，而我们使用boofuzz直接查看csv文件就可以,我们可以清晰的看到payload，我们可以用于复现和利用
-
-    ![](./image/fu5.png)
-
-  + 完整的fuzz代码
-
-    ```python
-    from boofuzz import *
-    from sys import exit
-    
-    def get_banner(target, my_logger, session, *args, **kwargs):
-        banner_template = "Welcome to Vulnerable Server! Enter HELP for help."
-        try:
-            banner = target.recv(10000)
-        except:
-            print "Unable to connect. Target is down. Exiting."
-            exit(1)
-    
-        my_logger.log_check('Receiving banner..')
-        if banner_template in banner:
-            my_logger.log_pass('banner received')
-        else:
-            my_logger.log_fail('No banner received')
-            print "No banner received, exiting.."
-            exit(1)
-    
-    def main():
-        port = 9999
-        host = '127.0.0.1'
-        protocol = 'tcp'
-    
-        s_initialize("Vulnserver")
-        s_group("verbs", values=["TRUN", "GMON", "KSTET"])
-    
-        if s_block_start("test", group="verbs"):
-            s_delim(" ")
-            s_string("AAA")
-            s_string("\r\n")
-    
-        s_block_end("test")
-    
-        csv_log = open('fuzz_results.csv', 'wb') 
-        my_logger = [FuzzLoggerCsv(file_handle=csv_log)]   
-        session = Session(
-                target=Target(
-                    connection = SocketConnection(host, port, proto=protocol),
-                    procmon=pedrpc.Client(host, 26002),
-                    procmon_options = {
-                            "proc_name" : "vulnserver.exe",
-                            "stop_commands" : ['wmic process where (name="vulnserver") delete'],
-                            "start_commands" : ['vulnserver.exe'],
-                    }
-                ),
-                fuzz_loggers=my_logger, 
-                crash_threshold_element= 1,# Crash how much times until stop
-        )
-    
-        session.connect(s_get("Vulnserver"), callback=get_banner)
-        session.fuzz()
-    
-    
-    if __name__ == "__main__":
-        main()
-    ```
-
-    
-
   
 
   
+
 
 
 
@@ -417,3 +669,11 @@
 + [CVE漏洞](https://blog.csdn.net/weixin_34146805/article/details/90361512)
 + [路由器漏洞](https://www.redhat.uno/2004.html)
 + [boofuzz社区](https://xz.aliyun.com/t/5155)
++ [binwalk提取固件](https://blog.csdn.net/QQ1084283172/article/details/66971242)
++ [CVE社区](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-7405)
++ [binwalk教程](https://blog.csdn.net/qq_35056292/article/details/99674670)
++ [固件模拟](https://blog.csdn.net/qq_35056292/article/details/99674670)
++ [firmadyne](https://github.com/firmadyne/firmadyne)
++ [DLink漏洞](https://www.freebuf.com/vuls/228726.html)
++ [boofuzz教程](https://blog.csdn.net/song_lee/article/details/104334096)
+
