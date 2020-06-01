@@ -213,7 +213,7 @@
   + 有了存储芯片的版本号，可以更轻松地在线查找有关它的更多信息，并且我们能够使用芯片夹和二进制文件分析工具BinWalk直接从芯片中提取固件。首先要先安装`binwalk`
 
     ```bash
-  sudo apt install binwalk
+    sudo apt install binwalk
     ```
 
     ![](./image/e4.png)
@@ -269,7 +269,6 @@
 #### 1克隆`Firmware Analysis Toolkit`工具集仓库
 
 ```bash
-
 # 1. 安装依赖
 sudo apt-get install busybox-static fakeroot git dmsetup kpartx netcat-openbsd nmap python-psycopg2 python3-psycopg2 snmp uml-utilities util-linux vlan
 
