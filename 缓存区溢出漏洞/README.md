@@ -292,15 +292,12 @@
     <<memStatusVirtual3.dwAvailVirtual-memStatusVirtual2.dwAvailVirtual<<endl<<endl;
     
     ```
-  ```
-  
-  ```
-  
+
 + 结论1：由 VirtualAlloc 分配的 内存（可读可写）内存可以正常的写入和读取
   
 + 结论2：将访问属性修改为 PAGE_READONLY 后，该段内存无法写入，但可以正常读取
-  
-  + 结论3：内存释放后将无法读取和写入
+
++ 结论3：内存释放后将无法读取和写入
 
 
 ### 实验四 内存地址保护
@@ -336,7 +333,7 @@
 
     ![](./image/t2s.png)
 
-  + 新建两个工程，同时执行以下代码，可以发现地址完全不相同，由此可见系统的内存保护
+  + 新建两个工程，同时执行以下代码，可以发现地址完全相同，由此可见系统的内存保护
 
     ```c
     #include <windows.h>
