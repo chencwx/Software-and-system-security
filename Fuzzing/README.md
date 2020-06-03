@@ -491,7 +491,217 @@ sudo -u postgres psql -d firmware < ./firmadyne/database/schema
 
 ### 实验三 （DLink RCE漏洞CVE-2019-17621分析）
 
-+ [漏洞分析](https://www.freebuf.com/vuls/228726.html)，(该路由器并没有在QEMU中运行成功┭┮﹏┭┮)
++ [漏洞分析](https://www.freebuf.com/vuls/228726.html)，~~~(该路由器并没有在QEMU中运行成功┭┮﹏┭┮)~~~
+
+#### 1 环境搭建
+
++ 运行环境安装配置之前须了解你所使用的Linux系统的版本以及Qemu的版本，因为这直接影响着你后续选择安装各种依赖包、mips qemu镜像等的版本，各种版本都对应上，最终系统才能正确运行。本次漏洞分析的基础环境为前期的Ubuntu18.04虚拟机和基于qemu-4.0.0源码编译安装的Qemu运行环境：
+
+  ![](./image/ubuntu.png)
+
++ 从站点https://people.debian.org/~aurel32/qemu/mips/下载debianmips qemu镜像，由于虚拟机是Ubuntu linux，下载debian_squeeze_mips_standard.qcow2和vmlinux-2.6.32-5-4kc-malta即可：
+
+  ![](./image/malta.png)
+
+#### 2 MIPS系统网络配置
+
++ 使用QEMU 模拟运行MIPS系统，需要将ubuntu虚拟机设置成桥接，这样以来ubuntu系统就可以和QEMU虚拟机进行通信和数据传输（此操作类似配置VMware Workstation的桥接用以与物理机的通信）。
+
+  获取安装依赖，执行以下命令：
+
+  ```bash
+  sudo apt-get install bridge-utils uml-utilities
+  ```
+
++ 修改ubuntu主机网络配置，将ubuntu的网络接口配置文件 /etc/network/interfaces 修改为如下内容并保存、关闭：
+
+  ```bash
+  sudo vim /etc/network/interfaces
+  ```
+
+  ![](./image/bro.png)
+  
++ 修改QEMU的网络接口启动脚本，重启网络使配置生效，执行以下命令：
+
+  ```bash
+  sudo gedit /etc/qemu-ifup
+  ```
+
++ 在脚本文件/etc/qemu-ifup结尾增加如下内容：
+
+  ![](./image/bc.png)
+
++ 保存文件/etc/qemu-ifup 以后，赋予可执行权限，然后重启网络使所有的配置生效：
+
+  > sudo chmod a+x /etc/qemu-ifup
+  >
+  > sudo /etc/init.d/networking restart
+
+#### 3 QEMU启动配置
+
++ Qemu运行之前先启动桥接网络，在本地ubuntu命令行终端执行以下命令（注意：ens33为ubuntu默认网卡）：
+
+  ```bash
+  sudo ifdown ens33
+  ```
+
+  ![](./image/en.png)
+  
+  ![](./image/in.png)
+  
++ QEMU MIPS虚拟机启动进入前面下载的mips镜像目录，执行以下命令：
+
+  
+
+  ```bash
+  sudo qemu-system-mips -M malta -kernelvmlinux-2.6.32-5-4kc-malta -hda debian_squeeze_mips_standard.qcow2 -append"root=/dev/sda1 console=tty0" -net nic,macaddr=00:16:3e:00:00:01 -nettap
+  ```
+
+  ![](./image/bash.png)
+  
++ 输入root/root便可登入qemu mips虚拟机，为了更便操作mips虚拟机，可在unbuntu中新开启一个终端，ssh连接到qemu mips：
+
+  ![](./image/get.png)
+
++ 从DLink官网下载包含漏洞版本的路由器固件：[ftp://ftp2.dlink.com/PRODUCTS/DIR-859/DIR-859_REVA_FIRMWARE_v1.05B03.zip](ftp://ftp2.dlink.com/PRODUCTS/DIR-859/DIR-859_REVA_FIRMWARE_v1.05B03.zip)，使用binwalk-Me直接解压固件可得到文件系统文件：
+
+  ![](./image/binwalk.png)
+
++ 固件模拟运行由两种方式可以考虑：① 将文件系统上传到qemu mips虚拟机中运行；② 借助firmadyne工具运行固件（当然也可以尝试使用AttifyOS VM）：
+
++ ① 使用scp命令将squashfs-root目录上传到qemu mips虚拟机：
+
+  ![](./image/sftp.png)
+
++ chroot /root/squashfs-root sh
+
+  ![](./image/shh.png)
+
++ ② 借助firmadyne工具运行固件
+
++ Firmadyne是一款自动化和可裁剪的嵌入式Linux系统固件分析框架，它支持系统固件逆向QEMU嵌入式系统模拟执行，使用其可模拟路由器固件、执行路由器。安装和使用方法[详见](https://github.com/firmadyne/firmadyne)。注意：Firmadyne安装之前，先安装firmware-analysis-toolkit，安装方法[详见](https://github.com/attify/firmware-analysis-toolkit)，安装完成之后在firmware-analysis-toolkit目录中创建firmadyne目录并下载安装Firmadyne。各自全部安装完成后如下所示（注意两个工具须完全按照步骤安装完成，否则后续固件运行会出错）：
+
+  ![](./image/tip.png)
+
++ 首先将firmware-analysis-toolkit目录下的fat.py和reset.py文件移动到firmadyne目录；接着进入firmadyne修改firmadyne.config设置路径如下：
+
+  ![](./image/firmday.png)
+  
+  
+  
++ 将固件bin文件拷贝至firmadyne目录，继续执行以下命令：
+  
+  
+  
+  ```bash
+  rm -rf images*python3 reset.pysudo -u postgres createdb -O firmadyne firmwaresudo -u postgres psql -d firmware < ./database/schema./sources/extractor/extractor.py -b Dlink -sql 127.0.0.1 -np-nk "DIR859Ax_FW105b03.bin" images./scripts/getArch.sh ./images/1.tar.gz./scripts/makeImage.sh 1./scripts/inferNetwork.sh 1./scratch/1/run.sh
+  ```
+  
+  ![](./image/rm.png)
+  
+  
+  
+  ![](./image/br.png)
+  
+  
+  
++ Ubuntu中打开浏览器，输入192.168.0.1即可访问仿真路由器：
+  
+  ![](./image/admin.png)
+  
+  
+  
+  
+  
+
+#### 4 远程调试
+
++ 路由器固件已成功得以运行，接下来可以对目标程序进行调试，此时可借助物理机中IDA进行远程调试（当然，IDA也可以安装在ubuntu中）。调试仍然有两种思路：
+
++ ① 在qemu mips虚拟机中，借助静态gdbserver和远程IDA的“remote GDB debugger”功能对目标mips程序进行动态调试，此处需要注意的是静态gdbserver文件格式必须和mips系统的大/小端完全对应，可用file命令查看固件的相关信息：
+
+  ![](./image/mipa.png)
+
++ 因此须首先交叉编译得到32bit MSB格式的静态gdbserver文件，交叉编译可用选择Openwrt或Buildroot，此处省略。
+
++ ② 在ubuntu解出固件文件系统后，使用chroot命令，配合qemu-mips-static运行目标文件（cgibin为目标文件），然后附件远程IDA进行动态调试，首先在ubuntu中执行以下命令：
+
+  ```bash
+  chroot ../qemu-mips-static -g 1235./htdocs/cgibin
+  ```
+
+  ![](./image/t1.png)
+  
++ 接着在物理集中打开IDA调试器，进行如下操作：
+
+  ![](./image/i1.png)
+
+  ![](./image/i2.png)
+
+  ![](./image/i3.png)
+
+  ![](./image/i4.png)
+
+  
+
++ 最终可成功进行远程调试：
+
+  ![](./image/debug.png)
+  
+  
+  
+  
+  
+#### 5 漏洞分析
+
++ 在路由器运行状态下，文件系统中的/htdocs/cgibin的genacgi_main()函数在UPnP请求处理过程中，存在远程执行代码漏洞。UPnP是专用网络中设备之间的通信协议，实现了智能设备端到端网络连接结构。它也是一种架构在TCP/IP和HTTP技术之上的，分布式、开放的网络结构，以使得在联网的设备间传递控制和数据。UPnP不需要设备驱动程序，因此使用UPnP建立的网络是介质无关的。同时UPnP使用标准的TCP/IP和网络协议，使它能够无缝的融入现有网络。构造UPnP应用程序时可以使用任何语言，并在任何操作系统平台上编译运行。
+
++ 尝试静态下使用IDA反汇编cgibin文件，然后F5查看伪代码，发现操作失败，故换用Ghidra(NSA发布的、基于Java开发的、适用于Windows、Mac和Linux的跨平台反汇编工具)，发现可快速定位genacgi_main()函数并查看伪码（貌似反汇编能力优于IDA？）：
+
+  ![](./image/q1.png)
+
++ 从伪码中可以看到，sprintf()函数设置了一个包含所有值的缓冲区，其中函数参数 ?service=及其值，被xmldbc_ephp()函数(最后调用send())将“buffer_8”中包含的数据发送给PHP：
+
+  ![](./image/q2.png)
+
++ 可看出sprintf()用于连接多个变量的值，用于填充一个缓冲区，设置要传递的新变量，其中SHELL_FILE将以格式%s_%d.sh进行传递，主要用于为新的shell脚本命名。缓冲区中的数据经过xmldbc_ephp处理，由PHP文件run.NOTIFY.php进行处理，如下：
+
+  ![](./image/d1.png)
+
+  ![](./image/d2.png)
+
+  ![](./image/d3.png)
+
++ 程序的调用流程为：buf_8 ->xmldbc_ephp->FUN_0041420c ->FUN_0041372c -> socket。关于run.NOTIFY.php内容：
+
+  ![](./image/run.png)
+
++ 其中可见调用了PHP函数 GENA_subscribe_new()，并传递cgibin程序中genacgi_main()函数获得的变量，还包括变量SHELL_FILE。搜索GENA_subscribe_new()发现其定义在gena.php文件中，分析GENA_subscribe_new功能可知其并不修改$shell_file变量，
+
+  ![](./image/open.png)
+
++ 其传递 $shell_file到GENA_notify_init函数，也就是shell_file最终处理的地方：通过调用PHP函数fwrite()创建新文件，且fwrite()函数被使用了两次：
+
+  ![](./image/ge.png)
+
++ fwrite()函数第一次创建文件，文件名由可控的SHELL_FILE变量(uri_service)以及getpid()组成：
+
+  ![](./image/pid.png)
+
++ 第二次调用fwrite()向文件中添加删除命令”rm -f”.$shell_file.”\n”，攻击时，只需要插入一个反引号包裹的系统命令，将其注入到shell脚本中，当脚本执行rm命令时遇到反引号将失败，继续执行引号里面的系统命令，从而达到远程命令执行漏洞的触发。因此，控制好”/gena.cgi?service=shell_file”中shell_file的内容为反引号包裹的系统命令，就可以触发漏洞。
+
+#### 6 漏洞重现
+
++ 根据漏洞原理，执行以下PoC脚本：
+
+  ![](./image/scrip.png)
+
++ 由此可见漏洞利用后，目标路由器的telnetd服务被开启，获得维持访问shell。
+
+  ![](./image/last.png)
+
+  
+
 
 
 ### 实验四（boofuzz脚本编写）
