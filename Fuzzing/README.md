@@ -491,7 +491,7 @@ sudo -u postgres psql -d firmware < ./firmadyne/database/schema
 
 ### 实验三 （DLink RCE漏洞CVE-2019-17621分析）
 
-+ [漏洞分析](https://www.freebuf.com/vuls/228726.html)，~~~(该路由器并没有在QEMU中运行成功┭┮﹏┭┮)~~~
++ [漏洞分析](https://www.freebuf.com/vuls/228726.html)，~~(该路由器并没有在QEMU中运行成功┭┮﹏┭┮)~~
 
 #### 1 环境搭建
 
